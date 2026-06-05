@@ -1,26 +1,634 @@
 @import "tailwindcss";
 
+/* ============================================================
+   超级个体 · Paper-and-ink workshop palette
+   ============================================================ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paper substrate */
+  --paper: #f3eed9;          /* Warm cream */
+  --paper-deep: #ece4c5;     /* Card/inset surface */
+  --paper-edge: #d4c69e;     /* Rules & edges */
+  --paper-shadow: rgba(50, 40, 14, 0.08);
+
+  /* Ink */
+  --ink: #14150f;            /* Body text */
+  --ink-soft: #3a3a32;
+  --ink-muted: #6a6655;
+  --ink-faint: #97917a;
+
+  /* Marker — emerald */
+  --marker: #047857;
+  --marker-bright: #10b981;
+  --marker-soft: #6ee7b7;
+  --marker-wash: #ccf2dd;
+
+  /* Marker — yellow highlighter */
+  --highlight: #fde047;
+  --highlight-wash: #fef9c3;
+
+  /* Stamp inks */
+  --stamp-red: #b53432;
+  --stamp-ink: #1b2a3e;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-paper-edge: var(--paper-edge);
+
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-marker: var(--marker);
+  --color-marker-bright: var(--marker-bright);
+  --color-marker-soft: var(--marker-soft);
+  --color-marker-wash: var(--marker-wash);
+
+  --color-highlight: var(--highlight);
+  --color-highlight-wash: var(--highlight-wash);
+
+  --color-stamp-red: var(--stamp-red);
+  --color-stamp-ink: var(--stamp-ink);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-fraunces);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  /* Subtle warm light + paper grain */
+  background-image:
+    radial-gradient(
+      ellipse 70% 40% at 50% 0%,
+      rgba(255, 252, 232, 0.65),
+      transparent 70%
+    ),
+    radial-gradient(
+      circle at 30% 20%,
+      rgba(170, 130, 50, 0.018) 0px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 70% 60%,
+      rgba(170, 130, 50, 0.015) 0px,
+      transparent 1.5px
+    );
+  background-size: auto, 4px 4px, 6px 6px;
+  color: var(--ink);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+::selection {
+  background: var(--marker);
+  color: var(--paper);
+}
+
+/* ============================================================
+   Typography utilities
+   ============================================================ */
+.font-display {
+  font-family: var(--font-fraunces), "Songti SC", "Source Han Serif SC",
+    "Noto Serif CJK SC", Georgia, serif;
+  font-feature-settings: "ss01" on, "ss02" on;
+}
+
+.font-cjk-serif {
+  font-family: "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC",
+    "STSong", Georgia, serif;
+}
+
+/* Heading kerning helpers */
+.tracking-display {
+  letter-spacing: -0.04em;
+}
+
+.tracking-mono-strip {
+  letter-spacing: 0.22em;
+}
+
+/* ============================================================
+   Decorative brand classes
+   ============================================================ */
+
+/* Yellow marker highlight behind text */
+.marker-yellow {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 52%,
+    var(--highlight) 52%,
+    var(--highlight) 94%,
+    transparent 94%
+  );
+  padding: 0 0.12em;
+}
+
+/* Emerald hand-drawn underline */
+.marker-line {
+  background-image: linear-gradient(
+    transparent calc(100% - 9px),
+    var(--marker) calc(100% - 9px),
+    var(--marker) calc(100% - 3px),
+    transparent calc(100% - 3px)
+  );
+  padding-bottom: 0.05em;
+}
+
+/* Field stamp — bordered uppercase mono label */
+.field-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  border: 1px solid currentColor;
+  padding: 0.36em 0.75em 0.32em;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.field-stamp-solid {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* Double-ruled stamp (postal stamp feel) */
+.field-stamp-double {
+  position: relative;
+  box-shadow:
+    inset 0 0 0 3px var(--paper),
+    inset 0 0 0 4px currentColor;
+}
+
+/* Inline rules */
+.rule-ink {
+  border: 0;
+  border-top: 1px solid var(--ink);
+  height: 0;
+  margin: 0;
+}
+
+.rule-double {
+  border: 0;
+  border-top: 3px double var(--ink);
+  height: 0;
+  margin: 0;
+}
+
+.rule-thick {
+  border: 0;
+  border-top: 4px solid var(--ink);
+  height: 0;
+  margin: 0;
+}
+
+.rule-dot {
+  background-image: radial-gradient(circle, var(--ink) 0.9px, transparent 0.9px);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+  background-position: 0 50%;
+  height: 1px;
+  border: 0;
+}
+
+.rule-perforated {
+  background-image: radial-gradient(circle, var(--paper) 3px, transparent 3.5px);
+  background-size: 12px 6px;
+  background-repeat: repeat-x;
+  background-position: 0 50%;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  height: 6px;
+}
+
+/* Cards */
+.field-card {
+  background: rgba(255, 252, 240, 0.55);
+  border: 1px solid var(--ink);
+  position: relative;
+}
+
+.field-card-inset {
+  background: var(--paper-deep);
+  border: 1px solid var(--ink);
+  position: relative;
+}
+
+.field-card-solid {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  position: relative;
+}
+
+/* Ink-shadow card hover (newspaper print drop) */
+.ink-shadow {
+  transition:
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ink-shadow:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 5px 5px 0 0 var(--ink);
+}
+
+.ink-shadow-static {
+  box-shadow: 4px 4px 0 0 var(--ink);
+}
+
+/* Numbered circle stamp */
+.num-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  /* background and text color controlled by utility classes
+     so hover variants can override correctly */
+}
+
+/* Washi tape strip on the top of an element */
+.tape-strip {
+  position: relative;
+}
+.tape-strip::before {
+  content: "";
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2.5deg);
+  width: 84px;
+  height: 22px;
+  background: rgba(4, 120, 87, 0.22);
+  border-top: 1px dashed rgba(4, 120, 87, 0.45);
+  border-bottom: 1px dashed rgba(4, 120, 87, 0.45);
+  pointer-events: none;
+}
+
+.tape-strip-yellow::before {
+  background: rgba(253, 224, 71, 0.32);
+  border-top: 1px dashed rgba(180, 130, 0, 0.45);
+  border-bottom: 1px dashed rgba(180, 130, 0, 0.45);
+}
+
+/* Animations — entrance */
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.5) rotate(-6deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.94) rotate(0.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+.stamp-in {
+  animation: stamp-in 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ink-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ink-rise {
+  animation: ink-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes slow-fade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.slow-fade {
+  animation: slow-fade 1200ms ease-out 80ms both;
+}
+
+/* Reveal-on-load delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-700 { animation-delay: 700ms; }
+.delay-800 { animation-delay: 800ms; }
+
+/* Slow drift — for atmosphere */
+@keyframes drift {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+.drift {
+  animation: drift 6s ease-in-out infinite;
+}
+
+/* Marker underline draw */
+@keyframes marker-draw {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+.marker-draw {
+  display: inline-block;
+  position: relative;
+}
+.marker-draw::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.05em;
+  height: 6px;
+  background: var(--marker);
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: marker-draw 700ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+}
+
+/* ============================================================
+   Existing prose styles
+   ============================================================ */
+.prose-mk {
+  font-size: 1.0625rem;
+  line-height: 1.85;
+  color: #1e293b;
+}
+
+.prose-mk > * + * {
+  margin-top: 1.25em;
+}
+
+.prose-mk h2 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2.3em;
+  margin-bottom: 0.6em;
+  color: #020617;
+}
+
+.prose-mk h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-top: 1.8em;
+  margin-bottom: 0.5em;
+  color: #020617;
+}
+
+.prose-mk h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1.6em;
+  margin-bottom: 0.4em;
+  color: #0f172a;
+}
+
+.prose-mk p {
+  margin: 1em 0;
+  color: #1e293b;
+}
+
+.prose-mk strong {
+  font-weight: 600;
+  color: #020617;
+}
+
+.prose-mk em {
+  color: #334155;
+}
+
+.prose-mk a {
+  color: #0f766e;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 500;
+}
+
+.prose-mk a:hover {
+  color: #115e59;
+}
+
+.prose-mk ul,
+.prose-mk ol {
+  padding-left: 1.5em;
+  margin: 1em 0;
+  color: #1e293b;
+}
+
+.prose-mk ul {
+  list-style: disc;
+}
+
+.prose-mk ol {
+  list-style: decimal;
+}
+
+.prose-mk li {
+  margin: 0.45em 0;
+}
+
+.prose-mk li::marker {
+  color: #94a3b8;
+}
+
+.prose-mk blockquote {
+  border-left: 3px solid #0f766e;
+  padding: 0.65em 1.1em;
+  margin: 1.4em 0;
+  color: #334155;
+  font-style: italic;
+  background: rgba(15, 118, 110, 0.06);
+  border-radius: 0 0.6em 0.6em 0;
+}
+
+.prose-mk blockquote p {
+  margin: 0.4em 0;
+  color: #334155;
+}
+
+.prose-mk hr {
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.12);
+  margin: 2.4em 0;
+}
+
+.prose-mk code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+}
+
+.prose-mk pre {
+  background: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0.9rem;
+  padding: 1em 1.1em;
+  padding-top: 3rem;
+  overflow-x: auto;
+  font-size: 0.875em;
+  line-height: 1.7;
+}
+
+.prose-mk pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: #e2e8f0;
+}
+
+.prose-mk table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92em;
+  color: #1e293b;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose-mk th,
+.prose-mk td {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0.6em 0.85em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose-mk th {
+  background: rgba(15, 23, 42, 0.05);
+  font-weight: 600;
+  color: #020617;
+}
+
+/* ============================================================
+   Callout blocks (inside prose-mk)
+   ============================================================ */
+
+/* Tighten spacing & override prose-mk's color in callout body */
+.prose-mk .callout {
+  margin: 2em 0;
+}
+
+.prose-mk .callout-body > * {
+  margin-top: 0.75em;
+}
+
+.prose-mk .callout-body > *:first-child {
+  margin-top: 0;
+}
+
+.prose-mk .callout-body p {
+  margin: 0.6em 0;
+}
+
+.prose-mk .callout-body ul,
+.prose-mk .callout-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+
+.prose-mk .callout-body li {
+  margin: 0.25em 0;
+}
+
+/* PROMPT (inverted dark) — re-style nested content for legibility */
+.prose-mk .callout[data-callout="prompt"] .callout-body,
+.prose-mk .callout[data-callout="prompt"] .callout-body p,
+.prose-mk .callout[data-callout="prompt"] .callout-body li,
+.prose-mk .callout[data-callout="prompt"] .callout-body strong,
+.prose-mk .callout[data-callout="prompt"] .callout-body em {
+  color: rgba(243, 238, 217, 0.95);
+}
+
+.prose-mk .callout[data-callout="prompt"] .callout-body code {
+  background: rgba(243, 238, 217, 0.12);
+  color: #fde047;
+}
+
+.prose-mk .callout[data-callout="prompt"] .callout-body pre {
+  background: #000;
+  border: 1px solid rgba(253, 224, 71, 0.25);
+}
+
+.prose-mk .callout[data-callout="prompt"] .callout-body a {
+  color: #fde047;
+}
+
+.prose-mk .callout[data-callout="prompt"] .callout-body li::marker {
+  color: rgba(253, 224, 71, 0.6);
+}
+
+.prose-mk .callout[data-callout="prompt"] .callout-body blockquote {
+  border-left-color: #fde047;
+  background: rgba(253, 224, 71, 0.08);
+  color: rgba(243, 238, 217, 0.9);
+}
+
+/* VERIFY — checklist style for task lists */
+.prose-mk .callout[data-callout="verify"] .callout-body ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.prose-mk .callout[data-callout="verify"] .callout-body li {
+  position: relative;
+  padding-left: 1.7em;
+}
+
+.prose-mk .callout[data-callout="verify"] .callout-body li::before {
+  content: "☐";
+  position: absolute;
+  left: 0;
+  top: -0.05em;
+  color: var(--marker);
+  font-size: 1.15em;
+  font-weight: 700;
+}
+
+/* PITFALL — slight orange accent on strong (current pitfall symptom) */
+.prose-mk .callout[data-callout="pitfall"] .callout-body strong {
+  color: var(--stamp-red);
+}
+
+/* APPLY — emphasize numbered list */
+.prose-mk .callout[data-callout="apply"] .callout-body ol li::marker {
+  color: var(--marker);
+  font-weight: 700;
 }

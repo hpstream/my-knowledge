@@ -1,0 +1,38 @@
+[
+  {
+    "slug": "agent-system-design",
+    "title": "Agent 系统设计实战",
+    "description": "从单次调用走向多 Agent 编排，拆解记忆、工具路由、任务恢复与评测闭环。",
+    "level": "Advanced",
+    "category": "Agent Architecture",
+    "lessonCount": 18,
+    "estimatedHours": 14,
+    "priceLabel": "¥299",
+    "badge": "Paid Intensive",
+    "statusLabel": "即将开放",
+    "highlights": [
+      "多 Agent 工作流",
+      "失败恢复与可观测性",
+      "真实系统拆解"
+    ],
+    "accent": "amber"
+  },
+  {
+    "slug": "rag-production-playbook",
+    "title": "RAG 上线手册",
+    "description": "围绕召回、重排、评测、缓存与权限边界，讲清 RAG 从 demo 到生产的关键路径。",
+    "level": "Intermediate",
+    "category": "RAG Systems",
+    "lessonCount": 15,
+    "estimatedHours": 11,
+    "priceLabel": "¥399",
+    "badge": "Paid Cohort",
+    "statusLabel": "内测预约",
+    "highlights": [
+      "检索链路设计",
+      "评测与指标体系",
+      "权限与知识更新"
+    ],
+    "accent": "cyan"
+  }
+]

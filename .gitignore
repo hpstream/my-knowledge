@@ -32,9 +32,26 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+/\ .env.local
+/openai.key
+/.openai-key
+/openai_api_key
+/.openai_api_key
+/OPENAI_API_KEY
+/key
+/.key
 
 # vercel
 .vercel
+
+# prisma sqlite local db
+prisma/*.db
+prisma/*.db-journal
+
+# archived markdown / json sources (kept locally as fallback, not committed)
+content/articles.archive/
+content/paths.archive/
 
 # typescript
 *.tsbuildinfo

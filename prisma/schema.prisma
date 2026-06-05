@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  displayName String?
+  avatarUrl   String?
+  role        String    @default("user")
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+
+  sessions         Session[]
+  progress         UserLessonProgress[]
+  authoredArticles Article[]            @relation("ArticleAuthor")
+  feedbacks        ArticleFeedback[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  userAgent String?
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerification {
+  id         String    @id @default(cuid())
+  email      String
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model LearningPath {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  title          String
+  description    String
+  estimatedHours Float     @default(2)
+  level          String    @default("Beginner")
+  category       String    @default("AI Engineering")
+  badge          String?
+  pricing        String    @default("free")
+  priceLabel     String?
+  statusLabel    String?
+  highlightsJson String    @default("[]")
+  accent         String?
+  status         String    @default("published")
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  publishedAt    DateTime?
+
+  @@index([slug])
+  @@index([status])
+  @@index([pricing])
+}
+
+model Article {
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  pathSlug         String?
+  kind             String    @default("lesson")
+  title            String
+  summary          String?
+  body             String
+  order            Int       @default(0)
+  readMinutes      Int       @default(10)
+  estimatedMinutes Int?
+  difficulty       Int?
+  cost             String?
+  quizJson         String    @default("[]")
+  status           String    @default("draft")
+  lastVerifiedAt   DateTime?
+  authorId         String?
+  author           User?     @relation("ArticleAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  publishedAt      DateTime?
+
+  @@index([pathSlug])
+  @@index([slug])
+  @@index([status])
+  @@index([kind])
+}
+
+model ArticleFeedback {
+  id          String   @id @default(cuid())
+  articleSlug String
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email       String?
+  category    String   @default("issue")
+  body        String
+  status      String   @default("open")
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@index([articleSlug])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model UserLessonProgress {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pathSlug     String
+  lessonSlug   String
+  completedAt  DateTime?
+  scoreCorrect Int?
+  scoreTotal   Int?
+  attemptsJson String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, lessonSlug])
+  @@index([userId])
+}
