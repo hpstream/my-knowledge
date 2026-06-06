@@ -12,7 +12,6 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:topics": "tsx prisma/seed-topics.ts",
-    "db:migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts",
     "image:generate": "node scripts/generate-image.mjs",
     "postinstall": "prisma generate"
   },
