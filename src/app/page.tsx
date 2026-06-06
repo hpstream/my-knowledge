@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getFreePaths } from "@/lib/content";
 import { isStale, listPublishedTopics } from "@/lib/articles";
-import { FoundationCard } from "@/components/home/FoundationCard";
 import { StartReadingCta } from "@/components/home/StartReadingCta";
 
 const PAIN_ITEMS = [
@@ -27,42 +26,6 @@ const PAIN_ITEMS = [
   },
 ];
 
-const TRACKS = [
-  {
-    number: "01",
-    tag: "基础",
-    title: "基础认知",
-    subtitle: "免费",
-    text: "建立 AI 时代独立做产品的世界观。不教你写代码，教你看清边界、选对工具、避免常见误区。",
-    cta: "开始阅读",
-    href: "#foundations",
-    accent: "var(--marker)",
-    available: true,
-  },
-  {
-    number: "02",
-    tag: "专题",
-    title: "专题攻略",
-    subtitle: "免费试运行",
-    text: "针对一个具体卡点，给现成方案：准备清单、申请入口、可复制的 AI 提示词、出错时的回退 prompt。",
-    cta: "浏览专题",
-    href: "#latest",
-    accent: "var(--stamp-red)",
-    available: true,
-  },
-  {
-    number: "03",
-    tag: "实战",
-    title: "实战项目",
-    subtitle: "即将推出",
-    text: "3-7 天上线一个完整可收钱的产品。把多个专题串成端到端的实战课，含项目模板。",
-    cta: "敬请期待",
-    href: "#",
-    accent: "var(--ink-faint)",
-    available: false,
-  },
-];
-
 const FIT_ITEMS = [
   "你有产品想法，但卡在「不会写代码」",
   "你试过让 AI 写代码，跑不通就崩溃",
@@ -70,18 +33,35 @@ const FIT_ITEMS = [
   "你想做副业、做超级个体，缺一份现成的清单",
 ];
 
+const DIFFERENCE_POINTS = [
+  "不教你从打螺丝开始学编程，而是先把事情跑通",
+  "每篇内容都告诉你：先准备什么、去哪里申请、怎么验证",
+  "重点解决“为什么我和 AI 来回问，却还是做不成”的卡点",
+  "先免费把内容做厚、把路径做顺，再考虑收费",
+];
+
+function featuredPathSlug(paths: Awaited<ReturnType<typeof getFreePaths>>) {
+  return paths.find((p) => p.slug === "launch-your-first-site")?.slug ?? null;
+}
+
+function foundationsSlug(paths: Awaited<ReturnType<typeof getFreePaths>>) {
+  return paths.find((p) => p.slug === "vibecoding-getting-started")?.slug ?? null;
+}
+
 export default async function Home() {
   const [freePaths, topics] = await Promise.all([
     getFreePaths(),
     listPublishedTopics(),
   ]);
-  const firstPath = freePaths[0]?.slug ?? null;
+
+  const pathA = foundationsSlug(freePaths);
+  const pathB = featuredPathSlug(freePaths);
   const featuredTopics = topics.slice(0, 6);
 
   return (
     <div className="text-ink">
       {/* ============================================
-          HERO — big confident typography
+          HERO
          ============================================ */}
       <section className="relative overflow-hidden border-b border-ink">
         <div
@@ -120,10 +100,7 @@ export default async function Home() {
               </p>
 
               <p className="ink-rise delay-400 mt-8 max-w-xl font-cjk-serif text-base leading-relaxed text-ink-soft md:text-lg">
-                想法到上线之间隔着几十个非代码门槛 ——
-                账号、域名、配置、合规、AI 的胡言乱语。
-                我们把这些路全部走过、踩过、整理成清单。
-                你只需要照着做。
+                你不需要从头学会所有技术。你需要的是：知道先准备什么、去哪里申请、按什么顺序做，然后把这些一次性交给 AI 帮你完成。
               </p>
 
               <p className="ink-rise delay-500 mt-6 font-cjk-serif text-sm text-ink-muted">
@@ -131,13 +108,13 @@ export default async function Home() {
               </p>
 
               <div className="ink-rise delay-600 mt-10 flex flex-wrap items-center gap-4">
-                <StartReadingCta targetPath={firstPath} />
+                <StartReadingCta targetPath={pathB ?? pathA} />
                 <Link
-                  href="#latest"
+                  href="#routes"
                   className="group inline-flex items-center gap-2 px-6 py-3.5 text-ink transition-colors hover:text-marker"
                 >
                   <span className="font-display text-lg font-semibold tracking-tight font-cjk-serif">
-                    浏览专题
+                    先看路线
                   </span>
                   <span className="transition-transform group-hover:translate-y-0.5 text-lg">
                     ↓
@@ -187,43 +164,29 @@ export default async function Home() {
       </section>
 
       {/* ============================================
-          FIT SECTION — qualifier checklist (第二部分)
+          SECTION 2 · 你现在是哪种人？
          ============================================ */}
-      <section
-        id="about"
-        className="relative overflow-hidden border-b border-ink bg-paper-deep/40"
-      >
-        <div className="mx-auto grid max-w-7xl gap-12 px-6 py-16 lg:grid-cols-[1fr_1.1fr] lg:gap-20 lg:px-10 lg:py-24">
-          <div>
+      <section id="about" className="border-b border-ink bg-paper-deep/40">
+        <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
+          <div className="mb-10 max-w-2xl">
             <div className="field-stamp inline-flex text-ink-soft">
-              <span className="font-cjk-serif">适合你吗</span>
+              <span className="font-cjk-serif">第二部分</span>
             </div>
             <h2 className="mt-5 font-display text-4xl font-bold leading-tight tracking-display text-ink lg:text-5xl">
-              <span className="font-cjk-serif">看看你</span>
-              <br />
+              <span className="font-cjk-serif">你现在</span>
               <span className="font-cjk-serif">
-                是不是<span className="marker-line">这种人</span>
-                <span className="font-display">：</span>
+                <span className="marker-line">卡在哪儿</span>
               </span>
+              <span className="font-cjk-serif">？</span>
             </h2>
-            <p className="mt-6 max-w-md font-cjk-serif text-base leading-relaxed text-ink-soft">
-              下面这些卡点，命中任意一条，就值得继续看下去。
+            <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+              先认清你目前所处的位置，再决定从哪条路线开始，会比盲目看文章高效得多。
             </p>
-
-            <div className="mt-10 inline-flex items-center gap-3 border border-ink bg-paper px-5 py-3">
-              <span className="font-cjk-serif text-xs text-ink-muted">
-                判定
-              </span>
-              <span className="font-display text-base font-bold text-ink">
-                <span className="font-cjk-serif">命中 ≥ 1 = </span>
-                <span className="marker-yellow">你的人</span>
-              </span>
-            </div>
           </div>
 
-          <ul className="space-y-5">
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {FIT_ITEMS.map((item, idx) => (
-              <li
+              <div
                 key={item}
                 className="field-card-inset group flex items-start gap-4 p-5 transition-colors hover:bg-paper-deep"
               >
@@ -231,38 +194,35 @@ export default async function Home() {
                   {String(idx + 1).padStart(2, "0")}
                 </span>
                 <div className="flex-1 pt-1">
-                  <p className="font-cjk-serif text-lg font-medium leading-snug text-ink">
+                  <p className="font-cjk-serif text-base font-medium leading-snug text-ink">
                     {item}
                   </p>
                 </div>
-                <span className="font-cjk-serif text-xs text-ink-faint transition-colors group-hover:text-marker">
-                  ✓ 命中
-                </span>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       </section>
 
       {/* ============================================
-          PAIN POINTS — diagnostic page (第三部分)
+          SECTION 3 · 你会放弃的四个地方
          ============================================ */}
       <section className="border-b border-ink">
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
           <div className="grid gap-10 lg:grid-cols-[auto_1fr] lg:gap-16">
             <div className="lg:max-w-xs">
               <div className="field-stamp inline-flex text-ink-soft">
-                <span className="font-cjk-serif">问题</span>
+                <span className="font-cjk-serif">第三部分</span>
               </div>
               <h2 className="mt-5 font-display text-4xl font-bold leading-tight tracking-display text-ink lg:text-5xl">
                 <span className="font-cjk-serif">AI 会写代码。</span>
                 <br />
                 <span className="font-cjk-serif">
-                  但<span className="marker-line">你卡在</span>这里：
+                  但<span className="marker-line">你会放弃</span>在这些地方：
                 </span>
               </h2>
               <p className="mt-6 font-cjk-serif text-sm text-ink-muted">
-                你放弃的四个理由
+                这是大多数新手会卡住的 4 个点。
               </p>
             </div>
 
@@ -287,124 +247,110 @@ export default async function Home() {
               ))}
             </ol>
           </div>
-
-          <div className="mt-16 grid gap-6 border-t border-ink pt-10 lg:grid-cols-[auto_1fr] lg:items-end lg:gap-12">
-            <div className="font-cjk-serif text-sm text-ink-muted">
-              我们的<br />回答 <span className="text-stamp-red">↘</span>
-            </div>
-            <div>
-              <p className="font-display text-3xl font-semibold leading-tight tracking-display text-ink lg:text-4xl">
-                <span className="font-cjk-serif">
-                  我们给你
-                  <span className="marker-yellow">现成的方案</span>。
-                </span>
-                <span className="font-cjk-serif">照着做就行。</span>
-              </p>
-              <p className="mt-4 text-base text-ink-soft">
-                不教你从打螺丝开始造车 ——
-                教你怎么直接<span className="font-cjk-serif">把车开走</span>。
-              </p>
-            </div>
-          </div>
         </div>
       </section>
 
       {/* ============================================
-          THREE TRACKS — Foundation / Topics / Workshops
+          SECTION 4 · 推荐学习路线（最重要）
          ============================================ */}
-      <section className="border-b border-ink">
+      <section id="routes" className="border-b border-ink bg-paper-deep/40">
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
-          <div className="mb-12 flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <div className="field-stamp inline-flex text-ink-soft">
-                <span className="font-cjk-serif">三条轨道</span>
-              </div>
-              <h2 className="mt-5 font-display text-4xl font-bold tracking-display text-ink lg:text-5xl">
-                <span className="font-cjk-serif">三条轨道，</span>
-                <span className="font-cjk-serif">一个目标。</span>
-              </h2>
+          <div className="mb-10 max-w-3xl">
+            <div className="field-stamp inline-flex text-ink-soft">
+              <span className="font-cjk-serif">第四部分</span>
             </div>
-            <p className="max-w-md text-sm leading-relaxed text-ink-soft font-cjk-serif">
-              从世界观到具体卡点，从单点解决到完整项目。 你可以从任意一条轨道开始，没有强制顺序。
+            <h2 className="mt-5 font-display text-4xl font-bold tracking-display text-ink lg:text-5xl">
+              <span className="font-cjk-serif">先走路线，</span>
+              <span className="font-cjk-serif">再看专题。</span>
+            </h2>
+            <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+              如果你还不知道自己该从哪里开始，就不要先看零散文章。先按下面的推荐路线走，效率最高。
             </p>
           </div>
 
-          <div className="grid gap-8 lg:grid-cols-3 lg:gap-6">
-            {TRACKS.map((track, idx) => (
-              <div
-                key={track.number}
-                className={`field-card ${
-                  track.available ? "ink-shadow" : "opacity-70"
-                } p-7 ${idx === 1 ? "lg:mt-6" : ""} ${idx === 2 ? "lg:mt-12" : ""}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div
-                    className="font-display text-7xl font-black leading-none tracking-display"
-                    style={{ color: track.accent }}
-                  >
-                    {track.number}
-                  </div>
-                  <span className="font-cjk-serif text-xs text-ink-muted">
-                    {track.subtitle}
-                  </span>
-                </div>
-
-                <div className="mt-6 border-t border-ink/25 pt-5">
-                  <div className="font-cjk-serif text-xs text-ink-muted">
-                    {track.tag}
-                  </div>
-                  <h3 className="mt-1 font-display text-2xl font-bold leading-tight tracking-tight text-ink">
-                    <span className="font-cjk-serif">{track.title}</span>
-                  </h3>
-                  <p className="mt-4 text-sm leading-relaxed text-ink-soft font-cjk-serif">
-                    {track.text}
-                  </p>
-                </div>
-
-                <div className="mt-6 flex items-center justify-between border-t border-ink/15 pt-4">
-                  {track.available ? (
-                    <Link
-                      href={track.href}
-                      className="group inline-flex items-center gap-2 font-display text-base font-medium text-ink"
-                    >
-                      <span className="font-cjk-serif">{track.cta}</span>
-                      <span className="transition-transform group-hover:translate-x-1">
-                        →
-                      </span>
-                    </Link>
-                  ) : (
-                    <span className="font-cjk-serif text-sm font-medium text-stamp-red">
-                      即将上线
-                    </span>
-                  )}
-                  <span className="font-mono text-[10px] text-ink-faint">
-                    {String(idx + 1).padStart(2, "0")} / 03
-                  </span>
-                </div>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <article className="field-card tape-strip p-8 ink-shadow">
+              <div className="flex items-center justify-between gap-4">
+                <span className="field-stamp field-stamp-solid">
+                  <span className="font-cjk-serif">路径 A</span>
+                </span>
+                <span className="font-cjk-serif text-sm text-ink-muted">
+                  基础认知 · 免费
+                </span>
               </div>
-            ))}
+              <h3 className="mt-6 font-display text-3xl font-bold tracking-tight text-ink">
+                <span className="font-cjk-serif">先把世界观搞对</span>
+              </h3>
+              <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+                适合：还没建立 AI 开发认知的人。先搞懂工具、边界、心智模型，避免一开始就被概念劝退。
+              </p>
+              <ul className="mt-5 space-y-2 font-cjk-serif text-sm text-ink-soft">
+                <li>• 理解 AI 编程到底擅长什么、不擅长什么</li>
+                <li>• 知道为什么你和 AI 会陷入提问循环</li>
+                <li>• 先建立判断力，再动手做产品</li>
+              </ul>
+              <div className="mt-8 flex items-center justify-between border-t border-ink/15 pt-4">
+                <span className="font-cjk-serif text-sm text-ink-muted">6 讲 · 免费</span>
+                <Link
+                  href={pathA ? `/paths/${pathA}` : "#"}
+                  className="font-display text-lg font-medium text-ink hover:text-marker"
+                >
+                  开始学习 →
+                </Link>
+              </div>
+            </article>
+
+            <article className="field-card tape-strip tape-strip-yellow p-8 ink-shadow-static border-2 border-marker">
+              <div className="flex items-center justify-between gap-4">
+                <span className="field-stamp field-stamp-solid">
+                  <span className="font-cjk-serif">路径 B · 推荐新手</span>
+                </span>
+                <span className="font-cjk-serif text-sm font-medium text-marker">
+                  从 0 到上线一个网站
+                </span>
+              </div>
+              <h3 className="mt-6 font-display text-3xl font-bold tracking-tight text-ink">
+                <span className="font-cjk-serif">完全小白，也能一步一步把网站发布出去</span>
+              </h3>
+              <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+                适合：你脑子里已经有网站或产品的想法，但根本不知道先从哪里开始。GitHub、Vercel、Neon、Cloudflare、邮箱验证码……这一条路线会把顺序讲透。
+              </p>
+              <ul className="mt-5 space-y-2 font-cjk-serif text-sm text-ink-soft">
+                <li>• 先理解每个平台分别负责什么</li>
+                <li>• 再按顺序注册和打通整条链路</li>
+                <li>• 目标不是学会全部技术，而是把网站真的跑起来</li>
+              </ul>
+              <div className="mt-8 flex items-center justify-between border-t border-ink/15 pt-4">
+                <span className="font-cjk-serif text-sm font-medium text-ink-muted">8 讲 · 免费</span>
+                <Link
+                  href={pathB ? `/paths/${pathB}` : "#"}
+                  className="font-display text-lg font-semibold text-marker hover:text-ink"
+                >
+                  从第 1 篇开始 →
+                </Link>
+              </div>
+            </article>
           </div>
         </div>
       </section>
 
       {/* ============================================
-          LATEST TOPICS — magazine TOC style (DB-backed)
+          SECTION 5 · 独立专题
          ============================================ */}
-      <section id="latest" className="border-b border-ink bg-paper-deep/40">
+      <section id="latest" className="border-b border-ink">
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
-          <div className="mb-12 flex flex-wrap items-end justify-between gap-6">
-            <div>
+          <div className="mb-10 flex flex-wrap items-end justify-between gap-6">
+            <div className="max-w-2xl">
               <div className="field-stamp inline-flex text-ink-soft">
-                <span className="font-cjk-serif">本期</span>
+                <span className="font-cjk-serif">第五部分</span>
               </div>
               <h2 className="mt-5 font-display text-4xl font-bold tracking-display text-ink lg:text-5xl">
-                <span className="font-cjk-serif">本期</span>
-                <span className="font-cjk-serif">
-                  <span className="marker-line">专题</span>
-                </span>
+                <span className="font-cjk-serif">已经知道自己卡在哪？</span>
+                <br />
+                <span className="font-cjk-serif">就直接看专题。</span>
               </h2>
-              <p className="mt-4 max-w-lg text-sm leading-relaxed text-ink-soft font-cjk-serif">
-                每周 1-2 篇新专题。 每篇都标注最近更新时间，超过 60 天会自动提示「可能过期」。
+              <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+                专题适合已经知道自己问题的人，比如：我只卡在微信登录、支付接入、DNS、发邮件这些具体点。
               </p>
             </div>
             <Link
@@ -418,147 +364,94 @@ export default async function Home() {
           {featuredTopics.length === 0 ? (
             <div className="field-card border-dashed p-12 text-center">
               <p className="font-cjk-serif text-lg text-ink">
-                第一篇专题还在路上。 稍等几天，我们正在写。
+                真正独立的专题还在整理中，先优先走上面的学习路线。
               </p>
             </div>
           ) : (
-            <>
-              <ol className="border-y-2 border-ink">
-                {featuredTopics.map((topic, idx) => {
-                  const stale = isStale(topic.lastVerifiedAt);
-                  return (
-                    <li
-                      key={topic.slug}
-                      className={`group relative grid items-baseline gap-x-4 px-1 py-6 transition-colors hover:bg-paper md:grid-cols-[auto_1fr_auto] ${
-                        idx < featuredTopics.length - 1
-                          ? "border-b border-ink/30"
-                          : ""
-                      }`}
-                    >
-                      <div className="flex items-baseline gap-4">
-                        <span className="font-display text-3xl font-black tracking-tight text-ink lg:text-4xl">
-                          {String(idx + 1).padStart(3, "0")}
+            <ol className="border-y-2 border-ink">
+              {featuredTopics.map((topic, idx) => {
+                const stale = isStale(topic.lastVerifiedAt);
+                return (
+                  <li
+                    key={topic.slug}
+                    className={`group relative grid items-baseline gap-x-4 px-1 py-6 transition-colors hover:bg-paper md:grid-cols-[auto_1fr_auto] ${
+                      idx < featuredTopics.length - 1
+                        ? "border-b border-ink/30"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-baseline gap-4">
+                      <span className="font-display text-3xl font-black tracking-tight text-ink lg:text-4xl">
+                        {String(idx + 1).padStart(3, "0")}
+                      </span>
+                      {stale && (
+                        <span className="font-cjk-serif text-xs font-semibold text-stamp-red">
+                          可能过期
                         </span>
-                        {stale && (
-                          <span className="font-cjk-serif text-xs font-semibold text-stamp-red">
-                            可能过期
-                          </span>
-                        )}
-                      </div>
+                      )}
+                    </div>
 
-                      <div className="md:px-2">
-                        <Link
-                          href={`/topics/${topic.slug}`}
-                          className="group/title block"
-                        >
-                          <h3 className="font-display text-xl font-bold leading-tight tracking-tight text-ink md:text-2xl">
-                            <span className="font-cjk-serif group-hover/title:underline group-hover/title:decoration-marker group-hover/title:decoration-4 group-hover/title:underline-offset-4">
-                              {topic.title}
-                            </span>
-                          </h3>
-                        </Link>
-                        {topic.summary && (
-                          <p className="mt-1 text-sm leading-relaxed text-ink-soft font-cjk-serif">
-                            {topic.summary}
-                          </p>
-                        )}
-                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 font-cjk-serif text-xs text-ink-muted">
-                          {topic.difficulty != null && (
-                            <span className="flex items-center gap-1.5">
-                              <span className="text-marker">●</span>
-                              <span>难度</span>
-                              <span className="text-ink">
-                                {"★".repeat(topic.difficulty)}
-                                <span className="text-ink-faint">
-                                  {"★".repeat(5 - topic.difficulty)}
-                                </span>
-                              </span>
-                            </span>
-                          )}
-                          {(topic.estimatedMinutes ?? topic.readMinutes) && (
-                            <>
-                              <span className="text-ink-faint">/</span>
-                              <span>
-                                {topic.estimatedMinutes ?? topic.readMinutes}{" "}
-                                分钟
-                              </span>
-                            </>
-                          )}
-                          {topic.cost && (
-                            <>
-                              <span className="text-ink-faint">/</span>
-                              <span>{topic.cost}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
+                    <div className="md:px-2">
                       <Link
                         href={`/topics/${topic.slug}`}
-                        className="hidden md:block font-cjk-serif text-sm text-ink-muted transition-colors group-hover:text-marker"
+                        className="group/title block"
                       >
-                        阅读 →
+                        <h3 className="font-display text-xl font-bold leading-tight tracking-tight text-ink md:text-2xl">
+                          <span className="font-cjk-serif group-hover/title:underline group-hover/title:decoration-marker group-hover/title:decoration-4 group-hover/title:underline-offset-4">
+                            {topic.title}
+                          </span>
+                        </h3>
                       </Link>
-                    </li>
-                  );
-                })}
-              </ol>
+                      {topic.summary && (
+                        <p className="mt-1 font-cjk-serif text-sm leading-relaxed text-ink-soft">
+                          {topic.summary}
+                        </p>
+                      )}
+                    </div>
 
-              <div className="mt-8 flex items-center justify-between font-cjk-serif text-sm text-ink-muted">
-                <span>↘ 还有更多在路上</span>
-                {topics.length > featuredTopics.length && (
-                  <Link href="/topics" className="hover:text-ink">
-                    查看全部 {topics.length} 篇 →
-                  </Link>
-                )}
-              </div>
-            </>
+                    <Link
+                      href={`/topics/${topic.slug}`}
+                      className="hidden md:block font-cjk-serif text-sm text-ink-muted transition-colors group-hover:text-marker"
+                    >
+                      阅读 →
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
           )}
         </div>
       </section>
 
       {/* ============================================
-          FOUNDATIONS — feature L1 paths
+          SECTION 6 · 为什么和别的知识站不一样
          ============================================ */}
-      <section id="foundations" className="border-b border-ink">
+      <section className="border-b border-ink bg-paper-deep/40">
         <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
-          <div className="mb-12 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div>
-              <div className="field-stamp inline-flex text-ink-soft">
-                <span className="font-cjk-serif">基础认知</span>
-              </div>
-              <h2 className="mt-5 font-display text-4xl font-bold tracking-display text-ink lg:text-5xl">
-                <span className="font-cjk-serif">先把</span>
-                <span className="font-cjk-serif">
-                  <span className="marker-yellow">世界观</span>
-                </span>
-                <span className="font-cjk-serif">搞对。</span>
-              </h2>
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-ink-soft font-cjk-serif">
-                在动手做产品之前，先理解 AI 时代独立开发者的工作方式。 这一层是免费的，也是后面所有内容的底座。
-              </p>
+          <div className="mb-10 max-w-2xl">
+            <div className="field-stamp inline-flex text-ink-soft">
+              <span className="font-cjk-serif">第六部分</span>
             </div>
-            <div className="text-right font-cjk-serif text-xs text-ink-muted">
-              <div>{freePaths.length} 条课程</div>
-              <div className="mt-1">免费</div>
-            </div>
+            <h2 className="mt-5 font-display text-4xl font-bold tracking-display text-ink lg:text-5xl">
+              <span className="font-cjk-serif">为什么这里和普通知识站不一样？</span>
+            </h2>
+            <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+              大多数知识站帮助你积累知识，但很难帮你把一件事真正做成。这里的目标不是让你学更多，而是让你跑通一个真实结果。
+            </p>
           </div>
 
-          {freePaths.length === 0 ? (
-            <div className="field-card border-dashed p-12 text-center text-ink-muted">
-              暂无内容
-            </div>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {freePaths.map((p, idx) => (
-                <FoundationCard
-                  key={p.slug}
-                  path={p}
-                  index={idx}
-                />
-              ))}
-            </div>
-          )}
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {DIFFERENCE_POINTS.map((item, idx) => (
+              <div key={item} className="field-card p-5 ink-shadow">
+                <div className="font-display text-4xl font-black text-marker">
+                  0{idx + 1}
+                </div>
+                <p className="mt-4 font-cjk-serif text-base leading-relaxed text-ink-soft">
+                  {item}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     </div>

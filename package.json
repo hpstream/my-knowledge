@@ -12,6 +12,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:topics": "tsx prisma/seed-topics.ts",
+    "db:seed:series": "tsx prisma/seed-series.ts",
     "image:generate": "node scripts/generate-image.mjs",
     "postinstall": "prisma generate"
   },

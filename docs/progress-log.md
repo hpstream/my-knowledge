@@ -68,7 +68,20 @@
 
 跑 `pnpm db:seed:topics` 是幂等的，任意时候重跑都安全。
 
-### 阶段 E · 正式邮箱登录（Resend）
+### 阶段 F · 文档系列入库成学习路径（最新）
+
+- `docs/topic-series/01-08` 已全部写完
+- 新增一条学习路径：
+  - **slug**: `launch-your-first-site`
+  - **title**: `从 0 到上线一个网站`
+- 这 8 篇文档已全部导入远程数据库，**作为 lesson 系列文章**（不是独立 topic）
+- 每篇都自动生成了 3 道选择题小测
+- 之前作为 `/topics` 展示的前三篇小白文章，已经自动转成这条路径下的课时文章，避免重复
+
+当前内容结构：
+- `/paths/vibecoding-getting-started` → 基础认知路径（6 讲）
+- `/paths/launch-your-first-site` → 小白上线路径（8 讲）
+- `/topics` → 留给真正独立专题
 
 | 文件 | 变化 |
 |---|---|
