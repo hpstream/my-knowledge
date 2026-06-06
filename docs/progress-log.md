@@ -7,8 +7,13 @@
 
 ## 0. 一句话总览
 
-这一轮把 **阶段 A（专题内容形态）/ B（首页接 DB）/ C（再写 2 篇专题）/ D（反馈闭环 + admin 仪表盘）** 全部做完。
-现在系统是：**3 篇真实专题已在线** + **读者能反馈** + **admin 能在仪表盘一眼看到全站状态**。
+这一轮把 **阶段 A（专题内容形态）/ B（首页接 DB）/ C（再写 2 篇专题）/ D（反馈闭环 + admin 仪表盘）** 全部做完，并在你新的要求下，开始重写一套「真正面向小白」的上线专题系列。
+
+现在系统是：
+- **站内 `/topics` 已改成小白优先的前 3 篇专题**
+- **`docs/topic-series/` 已完成 01-08 全链路文档**
+- **读者能反馈**
+- **admin 能在仪表盘一眼看到全站状态**
 
 整套靠的还是邮箱登录、没有任何付费功能 —— 符合 v0.3 决议「先做内容、不急于收费」。
 
@@ -47,15 +52,34 @@
 
 ### 阶段 C · 内容生产
 
-`prisma/seed-topics.ts` 里写入了 3 篇真实专题（每篇 5 个 callout + 5 道小测）：
+站内 `/topics` 现在展示的是 **面向小白的前三篇专题**（每篇 5 个 callout + 章末小测）：
 
-1. **`add-ai-chat-to-your-site`** — 在你的网站接入 AI 聊天（DeepSeek 兼容口径）
-2. **`deploy-your-project-with-vercel`** — 把你的项目部署上线（Vercel + Cloudflare 域名 + HTTPS）
-3. **`email-code-login`** — 邮箱 + 验证码登录（无密码方案）
+1. **`understand-the-stack`** — 你的网站要上线，到底要准备哪些东西？
+2. **`github-why-it-matters`** — 先注册 GitHub：它为什么是最重要的入口？
+3. **`register-the-platform-accounts`** — 注册 Vercel、Neon、Cloudflare、Resend：你到底得到了什么？
+
+此外，在 `docs/topic-series/` 目录下，我已经继续写完了完整的 01-08 系列文档：
+
+4. **`04-push-to-github-and-first-vercel-deploy.md`** — 本地项目 → GitHub → Vercel 第一次跑起来
+5. **`05-connect-neon-postgres.md`** — 把当前项目接到 Neon
+6. **`06-enable-email-login-with-resend.md`** — 让验证码真正发到邮箱
+7. **`07-buy-domain-and-connect-cloudflare.md`** — 买域名并接到 Vercel
+8. **`08-launch-checklist.md`** — 上线前最后检查 + 上线后 24 小时 checklist
 
 跑 `pnpm db:seed:topics` 是幂等的，任意时候重跑都安全。
 
-### 阶段 D · 反馈闭环 + Admin 仪表盘
+### 阶段 E · 正式邮箱登录（Resend）
+
+| 文件 | 变化 |
+|---|---|
+| `src/lib/auth/email.ts` | 新增 `resend` driver；保留 `console` driver 作为本地开发 fallback |
+| `.env.example` | 新增 `RESEND_API_KEY` / `MAIL_FROM`，并明确要求将 `re_xxxxxxxxx` 替换成真实 API key |
+| `README.md` | 新增“正式环境（Resend 真实邮件）”配置段 |
+
+说明：
+- `MAIL_DRIVER=console`：本地开发验证码仍打印到终端
+- `MAIL_DRIVER=resend`：调用 Resend 正式发邮件
+- 如果 `RESEND_API_KEY` 仍是 `re_xxxxxxxxx`，代码会明确报错提醒你替换
 
 | 文件 | 变化 |
 |---|---|
@@ -78,10 +102,10 @@
 ### 准备
 
 ```bash
-# 拉新 schema（这一批加了 ArticleFeedback 表）
+# 拉新 schema（这一批加了 ArticleFeedback / topic kind 等）
 pnpm db:migrate
 
-# 灌 3 篇专题进 DB（幂等，可重跑）
+# 灌 3 篇站内专题（幂等，可重跑）
 pnpm db:seed:topics
 
 # 重启 dev server
@@ -103,18 +127,18 @@ pnpm dev
 
 ### Checklist B · 专题详情页 + 5 个 callout
 
-打开 <http://localhost:3000/topics/add-ai-chat-to-your-site>
+打开 <http://localhost:3000/topics/understand-the-stack>
 
-- [ ] 文章头部有「Topic · L2」stamp + 难度 ★★☆☆☆ + 60 分钟 + "≈ ¥0.5/月"
-- [ ] 「VERIFIED · 2026/06/04」绿色已验证 stamp（不是红的「POSSIBLY OUTDATED」）
+- [ ] 文章头部有「专题」stamp + 难度 ★☆☆☆☆ + 约 18 分钟 + 免费
+- [ ] 「已验证」状态印章存在（不是红的「可能过期」）
 - [ ] 正文里 5 种 callout 都能看到、且**视觉互不相同**：
   - [ ] 📋 **prep**（灰底 + 黑色 stripe）
   - [ ] 🪪 **apply**（浅绿底 + emerald stripe）
   - [ ] 🤖 **prompt**（**黑底反转** + 黄色 stripe + 黄色高亮 inline code）
   - [ ] ✅ **verify**（白底 + 自动 ☐ 待办框，列表前面有方框）
   - [ ] ⚠️ **pitfall**（白底 + **红色** stripe + 红色 "症状" 关键字）
-- [ ] 文章底部「📝 本讲小测 · 5 道题 · 开始答题 ›」按钮还在
-- [ ] 点按钮 → 弹小测 modal → 答完显示分数 + 「学习下一讲 / 留在本讲」
+- [ ] 文章底部小测按钮还在
+- [ ] 点按钮 → 弹小测 modal → 答完显示分数
 
 ### Checklist C · 读者反馈
 
@@ -127,14 +151,14 @@ pnpm dev
 - [ ] 填几个字 → 提交 → 显示 ✓「收到，谢谢你！」
 - [ ] **关掉浏览器，看 admin 端**：见 Checklist E.5
 
-### Checklist D · 其他两篇专题
+### Checklist D · 其他专题
 
-- [ ] <http://localhost:3000/topics/deploy-your-project-with-vercel>
-  - 标题：「把你的项目部署上线（Vercel + 自定义域名 + HTTPS）」
-  - 5 个 callout 都能看到，里面有 4 个 pitfall（多个 pitfall 是允许的）
-- [ ] <http://localhost:3000/topics/email-code-login>
-  - 标题：「邮箱 + 验证码登录（无密码方案）」
-  - 这一篇里的 callout 包含 prompt 提示词模板
+- [ ] <http://localhost:3000/topics/github-why-it-matters>
+  - 标题是「先注册 GitHub：它为什么是最重要的入口？」
+  - 能正常显示文章正文和小测
+- [ ] <http://localhost:3000/topics/register-the-platform-accounts>
+  - 标题是「注册 Vercel、Neon、Cloudflare、Resend：你到底得到了什么？」
+  - 能正常显示文章正文和小测
 
 ### Checklist E · Admin 后台
 

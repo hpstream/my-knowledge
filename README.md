@@ -47,6 +47,8 @@ pnpm dev
 
 ## 体验邮箱登录
 
+### 本地开发（控制台验证码）
+
 1. 打开 <http://localhost:3000/paths/vibecoding-getting-started>
 2. 点 "开始学习 ›" 或任一课时 → 弹出登录模态
 3. 输入任意邮箱（例如 `you@example.com`）
@@ -64,6 +66,40 @@ pnpm dev
 6. 自动跳转到第一讲，开始阅读
 
 首次登录会自动创建账号。验证码 15 分钟过期、最多输错 5 次、60 秒可重发一次。
+
+### 正式环境（真实邮件）
+
+#### 方案 A：QQ 邮箱 SMTP（推荐你现在就用）
+
+如果你已经拿到了 QQ 邮箱 SMTP 授权码，把 `.env` / Vercel 环境变量改成：
+
+```bash
+MAIL_DRIVER="smtp"
+SMTP_HOST="smtp.qq.com"
+SMTP_PORT="465"
+SMTP_SECURE="true"
+SMTP_USER="你的QQ邮箱@qq.com"
+SMTP_PASS="你的SMTP授权码"
+MAIL_FROM="你的QQ邮箱@qq.com"
+```
+
+改完后：
+1. 本地重启 `pnpm dev`，或在 Vercel 重新部署
+2. 重新走一遍登录
+3. 去真实邮箱查收验证码
+
+#### 方案 B：Resend（等你有正式域名后再切）
+
+把 `.env` / Vercel 环境变量改成：
+
+```bash
+MAIL_DRIVER="resend"
+RESEND_API_KEY="re_xxxxxxxxx"
+MAIL_FROM="noreply@your-domain.com"
+```
+
+> **把 `re_xxxxxxxxx` 替换成你自己的真实 Resend API key。**
+> `MAIL_FROM` 必须是你已在 Resend 验证过域名的邮箱，例如 `noreply@你的域名.com`。
 
 ## 把自己升级为 admin（解锁文章后台）
 
