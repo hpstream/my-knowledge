@@ -16,7 +16,7 @@
 
 - Next.js 16 + React 19 + TypeScript
 - Tailwind CSS 4
-- Prisma 6 + SQLite
+- Prisma 6 + PostgreSQL（推荐 Neon）
 - zod / gray-matter / react-markdown
 
 ## 本地启动（首次）
@@ -30,6 +30,7 @@ pnpm install
 
 # 2. 复制环境变量模板
 cp .env.example .env
+# 然后把 DATABASE_URL 改成你的 Neon 连接串
 
 # 3. 初始化数据库（创建 prisma/dev.db 并跑迁移）
 pnpm db:migrate
