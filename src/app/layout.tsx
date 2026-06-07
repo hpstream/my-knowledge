@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
-import { SiteHeader } from "@/components/SiteHeader";
+import { ConditionalSiteHeader } from "@/components/ConditionalSiteHeader";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { getCurrentUser } from "@/lib/auth/session";
 import "./globals.css";
@@ -43,7 +43,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider initialUser={initialUser}>
-          <SiteHeader />
+          <ConditionalSiteHeader />
           <main className="flex-1">{children}</main>
         </AuthProvider>
       </body>

@@ -2,10 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllPaths, getPathWithArticles } from "@/lib/content";
 import { PathLessonList } from "@/components/PathLessonList";
+import { PathHeroCta } from "@/components/path/PathHeroCta";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export async function generateStaticParams() {
   const paths = await getAllPaths();
   return paths.map((p) => ({ slug: p.slug }));
+}
+
+function levelLabel(level: string): string {
+  const v = level.toLowerCase();
+  if (v.startsWith("begin")) return "入门";
+  if (v.startsWith("inter")) return "进阶";
+  if (v.startsWith("adv")) return "高级";
+  return level || "入门";
 }
 
 export default async function PathPage({
@@ -27,91 +37,153 @@ export default async function PathPage({
     quizCount: a.frontmatter.quiz.length,
   }));
 
-  const firstLessonSlug = lessons[0]?.slug;
-
-  const metaInline = [
-    learningPath.category,
-    learningPath.level,
-    `${lessons.length} 讲 · 约 ${learningPath.estimatedHours} 小时`,
-  ];
+  const isFree = learningPath.pricing === "free";
 
   return (
-    <div className="min-h-screen bg-[#f8f7f2] text-slate-900">
-      <div className="mx-auto max-w-3xl px-6 py-10 lg:py-14">
-        <Link
-          href="/"
-          className="text-sm text-slate-500 transition hover:text-slate-900"
-        >
-          ← 返回首页
-        </Link>
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-white text-slate-900">
+      <div className="flex-1">
+        <section className="mx-auto max-w-5xl px-6 pt-10 pb-6 lg:px-10">
+          <Link
+            href="/search?kind=path"
+            className="text-sm text-slate-500 transition hover:text-slate-900"
+          >
+            ← 返回免费课程
+          </Link>
 
-        <section className="mt-8 rounded-[32px] border border-slate-200 bg-white p-7 lg:p-9">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-[11px] uppercase tracking-[0.28em] text-emerald-700">
-            {learningPath.badge ?? "Free Course"}
-          </div>
-          <h1 className="mt-6 text-3xl font-semibold leading-[1.1] tracking-[-0.03em] text-slate-950 md:text-4xl">
-            {learningPath.title}
-          </h1>
-          <p className="mt-5 text-base leading-7 text-slate-600">
-            {learningPath.description}
-          </p>
-
-          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-slate-500">
-            {metaInline.map((item, idx) => (
-              <span key={item} className="flex items-center gap-3">
-                <span>{item}</span>
-                {idx < metaInline.length - 1 && (
-                  <span className="h-1 w-1 rounded-full bg-slate-300" />
+          <div className="mt-6 grid gap-8 rounded-3xl border border-slate-200 bg-white p-6 lg:grid-cols-2 lg:items-center lg:p-10">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                {learningPath.badge && (
+                  <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700">
+                    {learningPath.badge}
+                  </span>
                 )}
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                  {levelLabel(learningPath.level)}
+                </span>
+                {isFree && (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                    免费
+                  </span>
+                )}
+              </div>
+
+              <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 lg:text-4xl">
+                {learningPath.title}
+              </h1>
+              <p className="mt-3 text-base leading-7 text-slate-500">
+                {learningPath.description}
+              </p>
+              <div className="mt-4 text-sm text-slate-500">
+                {lessons.length} 讲 · 约 {learningPath.estimatedHours} 小时
+              </div>
+
+              {lessons.length > 0 && (
+                <div className="mt-6">
+                  <PathHeroCta
+                    pathSlug={learningPath.slug}
+                    lessons={lessons.map((l) => ({
+                      slug: l.slug,
+                      title: l.title,
+                      order: l.order,
+                    }))}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="hidden aspect-[4/3] items-center justify-center rounded-2xl bg-amber-100 lg:flex">
+              <span className="text-7xl opacity-60" aria-hidden>
+                📒
               </span>
-            ))}
+            </div>
           </div>
 
           {learningPath.highlights.length > 0 && (
-            <ul className="mt-6 space-y-2.5">
-              {learningPath.highlights.map((item) => (
-                <li
-                  key={item}
-                  className="flex items-start gap-3 text-sm text-slate-700"
-                >
-                  <span className="mt-2 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
-                  <span>{item}</span>
-                </li>
-              ))}
+            <ul className="mt-6 grid auto-rows-fr gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {learningPath.highlights.map((item) => {
+                const { title, description } = splitHighlight(item);
+                return (
+                  <li
+                    key={item}
+                    className="flex h-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4"
+                  >
+                    <CheckBadge />
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-sm leading-snug text-slate-900">
+                        {title}
+                      </div>
+                      {description && (
+                        <div className="mt-1 line-clamp-2 text-xs leading-snug text-slate-500">
+                          {description}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
-
-          {firstLessonSlug && (
-            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href={`/paths/${learningPath.slug}/${firstLessonSlug}`}
-                className="inline-flex items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-              >
-                开始学习 ›
-              </Link>
-              <Link
-                href="#course-outline"
-                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400"
-              >
-                查看大纲
-              </Link>
-            </div>
-          )}
         </section>
 
-        <section id="course-outline" className="mt-10 scroll-mt-24">
+        <section
+          id="course-outline"
+          className="mx-auto max-w-5xl scroll-mt-20 px-6 pb-12 lg:px-10"
+        >
           <div className="mb-5">
-            <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
-              Course outline
-            </div>
-            <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-slate-950">
-              按顺序学习，完成一讲解锁下一讲
+            <h2 className="text-xl font-bold text-slate-900 lg:text-2xl">
+              课程大纲
             </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              完成一讲解锁下一讲
+            </p>
           </div>
 
-          <PathLessonList pathSlug={learningPath.slug} lessons={lessons} />
+          {lessons.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500">
+              这条系列还没有课时，敬请期待。
+            </div>
+          ) : (
+            <PathLessonList
+              pathSlug={learningPath.slug}
+              lessons={lessons}
+            />
+          )}
         </section>
       </div>
+
+      <SiteFooter />
     </div>
   );
+}
+
+function CheckBadge() {
+  return (
+    <span
+      className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange-500 text-white"
+      aria-hidden
+    >
+      <svg
+        className="h-3.5 w-3.5"
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polyline points="5 10.5 8.5 14 15 7" />
+      </svg>
+    </span>
+  );
+}
+
+function splitHighlight(raw: string): { title: string; description: string | null } {
+  const sep = /[｜|]/;
+  const idx = raw.search(sep);
+  if (idx === -1) return { title: raw.trim(), description: null };
+  return {
+    title: raw.slice(0, idx).trim(),
+    description: raw.slice(idx + 1).trim() || null,
+  };
 }

@@ -24,6 +24,9 @@ export const pathCreateSchema = z.object({
   statusLabel: z.string().max(80).optional().nullable(),
   highlights: z.array(z.string().max(200)).default([]),
   accent: z.string().max(50).optional().nullable(),
+  coverUrl: z.string().url().max(500).optional().nullable(),
+  tags: z.array(z.string().min(1).max(24)).max(20).default([]),
+  ribbon: z.enum(["精品", "推荐", "新品", "热门", "付费"]).optional().nullable(),
   status: pathStatusSchema.default("draft"),
   sortOrder: z.number().int().default(0),
 });

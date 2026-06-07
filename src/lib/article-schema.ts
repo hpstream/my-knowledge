@@ -24,6 +24,9 @@ const articleBaseShape = {
   difficulty: z.number().int().min(1).max(5).optional().nullable(),
   estimatedMinutes: z.number().int().positive().optional().nullable(),
   cost: z.string().max(80).optional().nullable(),
+  coverUrl: z.string().url().max(500).optional().nullable(),
+  tags: z.array(z.string().min(1).max(24)).max(20).default([]),
+  ribbon: z.enum(["精品", "推荐", "新品", "热门", "付费"]).optional().nullable(),
   quiz: z.array(quizQuestionSchema).default([]),
   status: articleStatusSchema.default("draft"),
 };

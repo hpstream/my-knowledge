@@ -79,6 +79,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         highlightsJson: JSON.stringify(data.highlights),
       }),
       ...(data.accent !== undefined && { accent: data.accent ?? null }),
+      ...(data.coverUrl !== undefined && { coverUrl: data.coverUrl ?? null }),
+      ...(data.tags !== undefined && { tagsJson: JSON.stringify(data.tags) }),
+      ...(data.ribbon !== undefined && { ribbon: data.ribbon ?? null }),
       ...(data.status !== undefined && { status: data.status }),
       ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
       ...(willPublish && !wasPublished

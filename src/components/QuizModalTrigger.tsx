@@ -41,20 +41,18 @@ export function QuizModalTrigger({
 
   return (
     <>
-      <div className="mt-12 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-base font-semibold text-slate-900">本讲小测</div>
-          <div className="mt-1 text-sm text-slate-500">
-            {questions.length} 道题 ·
-            {nextLessonSlug ? " 答完解锁下一讲" : " 答完即完成本路径"}
-          </div>
+      <div className="mt-12 flex flex-col items-center gap-3 rounded-3xl border border-orange-200 bg-orange-50/40 p-6 text-center">
+        <div className="text-sm font-medium text-slate-700">
+          {questions.length} 道题 ·
+          {nextLessonSlug ? " 答完解锁下一讲" : " 答完即完成本路径"}
         </div>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex flex-shrink-0 items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="inline-flex items-center justify-center gap-1 rounded-full bg-orange-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-orange-600"
         >
-          开始答题 ›
+          {nextLessonSlug ? "完成本讲并答题" : "开始答题"}
+          <span aria-hidden>→</span>
         </button>
       </div>
 

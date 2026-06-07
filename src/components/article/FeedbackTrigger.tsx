@@ -86,14 +86,41 @@ export function FeedbackTrigger({ articleSlug }: Props) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group inline-flex items-center gap-2 border border-ink/30 bg-paper px-4 py-2 text-sm text-ink-soft transition-colors hover:border-ink hover:text-ink"
-      >
-        <span aria-hidden>📨</span>
-        <span className="font-cjk-serif">反馈这一篇</span>
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setCategory("issue");
+            setOpen(true);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <span aria-hidden>🐛</span>
+          <span>跑不通</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCategory("improve");
+            setOpen(true);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <span aria-hidden>💡</span>
+          <span>建议</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCategory("praise");
+            setOpen(true);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <span aria-hidden>💚</span>
+          <span>感谢</span>
+        </button>
+      </div>
 
       {open && (
         <div
@@ -105,23 +132,21 @@ export function FeedbackTrigger({ articleSlug }: Props) {
             type="button"
             aria-label="关闭"
             onClick={close}
-            className="absolute inset-0 bg-ink/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
           />
-          <div className="relative z-10 w-full max-w-lg bg-paper border border-ink ink-shadow-static p-6 sm:p-8">
-            <div className="flex items-start justify-between">
+          <div className="relative z-10 w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-mono-strip text-ink-muted">
-                  Article feedback
-                </div>
-                <h3 className="mt-1 font-display text-2xl font-bold tracking-tight text-ink">
-                  <span className="font-cjk-serif">反馈这一篇</span>
-                </h3>
+                <h3 className="text-lg font-bold text-slate-900">反馈这一篇</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  告诉我们哪里有问题，我们会更新这篇文章。
+                </p>
               </div>
               <button
                 type="button"
                 onClick={close}
-                className="text-ink-muted transition-colors hover:text-ink"
                 aria-label="关闭"
+                className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
               >
                 ×
               </button>
@@ -129,19 +154,19 @@ export function FeedbackTrigger({ articleSlug }: Props) {
 
             {done ? (
               <div className="mt-8 text-center">
-                <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-marker text-paper text-2xl">
+                <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-2xl text-white">
                   ✓
                 </div>
-                <p className="mt-4 font-cjk-serif text-lg text-ink">
+                <p className="mt-4 text-lg font-medium text-slate-900">
                   收到，谢谢你！
                 </p>
-                <p className="mt-2 text-sm text-ink-soft">
+                <p className="mt-2 text-sm text-slate-500">
                   我们会一条条看，重要的会回复你。
                 </p>
                 <button
                   type="button"
                   onClick={close}
-                  className="mt-6 inline-flex items-center bg-ink px-5 py-2 text-sm text-paper transition-colors hover:bg-marker"
+                  className="mt-6 inline-flex items-center justify-center rounded-full bg-orange-500 px-5 py-2 text-sm font-medium text-white transition hover:bg-orange-600"
                 >
                   关闭
                 </button>
@@ -149,7 +174,7 @@ export function FeedbackTrigger({ articleSlug }: Props) {
             ) : (
               <>
                 <div className="mt-6">
-                  <div className="font-mono text-[10px] uppercase tracking-mono-strip text-ink-muted mb-2">
+                  <div className="mb-2 text-xs font-medium text-slate-500">
                     类型
                   </div>
                   <div className="flex gap-2">
@@ -158,25 +183,20 @@ export function FeedbackTrigger({ articleSlug }: Props) {
                         key={c}
                         type="button"
                         onClick={() => setCategory(c)}
-                        className={`flex-1 border px-3 py-2 text-sm transition-colors ${
+                        className={
                           category === c
-                            ? "border-ink bg-ink text-paper"
-                            : "border-ink/30 bg-paper text-ink-soft hover:border-ink/60"
-                        }`}
+                            ? "flex-1 rounded-full bg-orange-500 px-3 py-2 text-sm font-medium text-white transition"
+                            : "flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-slate-300"
+                        }
                       >
-                        <span className="font-cjk-serif">
-                          {CATEGORY_LABELS[c]}
-                        </span>
+                        {CATEGORY_LABELS[c]}
                       </button>
                     ))}
                   </div>
                 </div>
 
                 <div className="mt-5">
-                  <label
-                    htmlFor="fb-body"
-                    className="font-mono text-[10px] uppercase tracking-mono-strip text-ink-muted"
-                  >
+                  <label htmlFor="fb-body" className="text-xs font-medium text-slate-500">
                     描述
                   </label>
                   <textarea
@@ -192,19 +212,16 @@ export function FeedbackTrigger({ articleSlug }: Props) {
                           : "随便聊聊都行"
                     }
                     maxLength={2000}
-                    className="mt-2 w-full border border-ink/30 bg-paper px-3 py-2 text-sm font-mono text-ink outline-none focus:border-ink"
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300"
                   />
-                  <div className="mt-1 text-right font-mono text-[10px] text-ink-faint">
+                  <div className="mt-1 text-right text-xs text-slate-400">
                     {body.length} / 2000
                   </div>
                 </div>
 
                 {!user && (
                   <div className="mt-3">
-                    <label
-                      htmlFor="fb-email"
-                      className="font-mono text-[10px] uppercase tracking-mono-strip text-ink-muted"
-                    >
+                    <label htmlFor="fb-email" className="text-xs font-medium text-slate-500">
                       你的邮箱（可选，方便我们回复）
                     </label>
                     <input
@@ -213,13 +230,13 @@ export function FeedbackTrigger({ articleSlug }: Props) {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="mt-2 w-full border border-ink/30 bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+                      className="mt-2 w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300"
                     />
                   </div>
                 )}
 
                 {error && (
-                  <div className="mt-4 border border-stamp-red bg-paper px-3 py-2 text-sm text-stamp-red">
+                  <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                     {error}
                   </div>
                 )}
@@ -229,7 +246,7 @@ export function FeedbackTrigger({ articleSlug }: Props) {
                     type="button"
                     onClick={close}
                     disabled={submitting}
-                    className="text-sm text-ink-muted transition-colors hover:text-ink"
+                    className="rounded-full px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
                   >
                     取消
                   </button>
@@ -237,7 +254,7 @@ export function FeedbackTrigger({ articleSlug }: Props) {
                     type="button"
                     onClick={submit}
                     disabled={submitting}
-                    className="bg-ink px-5 py-2 text-sm text-paper transition-colors hover:bg-marker disabled:opacity-40"
+                    className="rounded-full bg-orange-500 px-5 py-2 text-sm font-medium text-white transition hover:bg-orange-600 disabled:opacity-40"
                   >
                     {submitting ? "提交中…" : "提交反馈"}
                   </button>

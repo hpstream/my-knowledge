@@ -31,6 +31,9 @@ export const learningPathSchema = z.object({
   statusLabel: z.string().optional(),
   highlights: z.array(z.string()).default([]),
   accent: z.string().optional(),
+  coverUrl: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  ribbon: z.string().optional(),
 });
 
 export const marketingCourseSchema = z.object({

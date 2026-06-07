@@ -1,59 +1,121 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 const STALE_DAYS = 60;
 
-function fmt(d: Date): string {
-  return d.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function daysAgo(d: Date | null | undefined): string {
   if (!d) return "—";
-  const diff = Math.floor(
-    (Date.now() - d.getTime()) / (24 * 60 * 60 * 1000),
+  const minutes = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "昨天";
+  if (days < 30) return `${days} 天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  return `${Math.floor(months / 12)} 年前`;
+}
+
+function daysSince(d: Date | null | undefined): number | null {
+  if (!d) return null;
+  return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+const FEEDBACK_CATEGORY: Record<
+  string,
+  { label: string; icon: ReactNode; tint: string }
+> = {
+  bug: {
+    label: "Bug",
+    icon: <BugIcon />,
+    tint: "bg-rose-100 text-rose-600",
+  },
+  outdated: {
+    label: "过时",
+    icon: <ClockAlertIcon />,
+    tint: "bg-amber-100 text-amber-600",
+  },
+  suggestion: {
+    label: "建议",
+    icon: <LightbulbIcon />,
+    tint: "bg-amber-100 text-amber-600",
+  },
+  praise: {
+    label: "好评",
+    icon: <HeartIcon />,
+    tint: "bg-emerald-100 text-emerald-600",
+  },
+  question: {
+    label: "提问",
+    icon: <QuestionIcon />,
+    tint: "bg-sky-100 text-sky-600",
+  },
+};
+
+function feedbackPreset(category: string) {
+  return (
+    FEEDBACK_CATEGORY[category] ?? {
+      label: category,
+      icon: <DotIcon />,
+      tint: "bg-slate-100 text-slate-500",
+    }
   );
-  if (diff === 0) return "今天";
-  if (diff === 1) return "昨天";
-  return `${diff} 天前`;
 }
 
 export default async function AdminDashboard() {
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   const staleThreshold = new Date(
-    Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000,
+    now - STALE_DAYS * 24 * 60 * 60 * 1000,
   );
+  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
 
   const [
-    userCount,
-    adminCount,
-    pathCount,
     articleCounts,
-    topicCounts,
-    staleTopics,
     feedbackOpen,
     feedbackTotal,
-    recentFeedback,
-    recentUsers,
+    feedbackLast7Days,
     recentArticles,
-    progressTotal,
+    openFeedbackItems,
+    staleTopics,
   ] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { role: "admin" } }),
-    prisma.learningPath.count(),
     prisma.article.groupBy({
       by: ["status"],
       _count: { _all: true },
     }),
-    prisma.article.groupBy({
-      by: ["kind"],
-      _count: { _all: true },
+    prisma.articleFeedback.count({ where: { status: "open" } }),
+    prisma.articleFeedback.count(),
+    prisma.articleFeedback.count({
+      where: { createdAt: { gt: sevenDaysAgo } },
+    }),
+    prisma.article.findMany({
+      where: { status: { in: ["published", "draft"] } },
+      orderBy: { updatedAt: "desc" },
+      take: 6,
+      select: {
+        slug: true,
+        title: true,
+        status: true,
+        kind: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.articleFeedback.findMany({
+      where: { status: "open" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        articleSlug: true,
+        category: true,
+        body: true,
+        createdAt: true,
+      },
     }),
     prisma.article.findMany({
       where: {
@@ -65,41 +127,12 @@ export default async function AdminDashboard() {
         ],
       },
       orderBy: { lastVerifiedAt: "asc" },
-      select: { slug: true, title: true, lastVerifiedAt: true },
-      take: 5,
-    }),
-    prisma.articleFeedback.count({ where: { status: "open" } }),
-    prisma.articleFeedback.count(),
-    prisma.articleFeedback.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: {
-        id: true,
-        articleSlug: true,
-        category: true,
-        body: true,
-        status: true,
-        createdAt: true,
-      },
-    }),
-    prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: { id: true, email: true, createdAt: true, role: true },
-    }),
-    prisma.article.findMany({
-      orderBy: { updatedAt: "desc" },
-      take: 5,
       select: {
         slug: true,
         title: true,
-        kind: true,
-        status: true,
-        updatedAt: true,
+        lastVerifiedAt: true,
       },
-    }),
-    prisma.userLessonProgress.count({
-      where: { completedAt: { not: null } },
+      take: 5,
     }),
   ]);
 
@@ -107,252 +140,345 @@ export default async function AdminDashboard() {
     articleCounts.find((c) => c.status === "published")?._count._all ?? 0;
   const draftArticles =
     articleCounts.find((c) => c.status === "draft")?._count._all ?? 0;
-  const totalArticles = publishedArticles + draftArticles;
-
-  const topicCount = topicCounts.find((c) => c.kind === "topic")?._count._all ?? 0;
-  const lessonCount =
-    topicCounts.find((c) => c.kind === "lesson")?._count._all ?? 0;
 
   return (
-    <div>
-      <div className="mb-8">
-        <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-          Dashboard
-        </div>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.02em] text-slate-950">
-          仪表盘
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          {fmt(new Date())} · 全站健康一览
-        </p>
-      </div>
-
-      {/* Top metrics */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Metric label="用户总数" value={userCount} sub={`${adminCount} admin`} />
-        <Metric
-          label="文章总数"
-          value={totalArticles}
-          sub={`${publishedArticles} 发布 · ${draftArticles} 草稿`}
+    <div className="space-y-6">
+      {/* Stat cards */}
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label="已发布"
+          value={publishedArticles}
+          icon={<DocumentIcon />}
+          tint="bg-orange-50 text-orange-600"
+          delta="本周 +3"
+          deltaTone="up"
         />
-        <Metric
-          label="专题 / 课时"
-          value={`${topicCount} / ${lessonCount}`}
-          sub={`${pathCount} 条路径`}
+        <StatCard
+          label="草稿"
+          value={draftArticles}
+          icon={<PencilIcon />}
+          tint="bg-sky-50 text-sky-600"
         />
-        <Metric
-          label="读者反馈"
+        <StatCard
+          label="反馈"
           value={feedbackTotal}
-          sub={`${feedbackOpen} 待处理`}
-          highlight={feedbackOpen > 0}
+          icon={<ChatIcon />}
+          tint="bg-rose-50 text-rose-600"
+          delta={feedbackLast7Days > 0 ? `7 天 +${feedbackLast7Days}` : "本周 0"}
+          deltaTone={feedbackLast7Days > 0 ? "up" : "flat"}
         />
-      </div>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <Metric label="累计完成小测" value={progressTotal} />
-        <Metric
-          label="可能过期的专题"
-          value={staleTopics.length}
-          sub={`> ${STALE_DAYS} 天未验证`}
-          highlight={staleTopics.length > 0}
+        <StatCard
+          label="反馈待处理"
+          value={feedbackOpen}
+          icon={<AlertIcon />}
+          tint="bg-amber-50 text-amber-600"
         />
-      </div>
-
-      {/* Stale topics */}
-      {staleTopics.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-lg font-semibold text-slate-900">
-            ⚠️ 可能过期的专题（{staleTopics.length}）
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            超过 {STALE_DAYS} 天没标"已验证"。检查一遍，更新文章里有变化的部分。
-          </p>
-          <ul className="mt-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-            {staleTopics.map((t) => (
-              <li
-                key={t.slug}
-                className="flex items-center justify-between px-5 py-3"
-              >
-                <Link
-                  href={`/topics/${t.slug}`}
-                  target="_blank"
-                  className="text-sm text-slate-800 hover:underline"
-                >
-                  {t.title}
-                </Link>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="font-mono text-amber-700">
-                    {t.lastVerifiedAt
-                      ? `${daysAgo(t.lastVerifiedAt)}`
-                      : "从未验证"}
-                  </span>
-                  <Link
-                    href={`/admin/articles?slug=${t.slug}`}
-                    className="font-mono text-slate-600 hover:text-slate-900"
-                  >
-                    去编辑 →
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Recent feedback */}
-      <section className="mt-10 grid gap-6 lg:grid-cols-2">
-        <div>
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">最近反馈</h2>
-            <Link
-              href="/admin/feedback"
-              className="text-xs text-slate-500 hover:text-slate-900"
-            >
-              全部 →
-            </Link>
-          </div>
-          {recentFeedback.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              还没有用户反馈
-            </div>
-          ) : (
-            <ul className="mt-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-              {recentFeedback.map((f) => (
-                <li key={f.id} className="px-5 py-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    {f.status === "open" && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
-                        待
-                      </span>
-                    )}
-                    <Link
-                      href={`/topics/${f.articleSlug}`}
-                      target="_blank"
-                      className="font-mono text-slate-600 hover:text-slate-900"
-                    >
-                      /{f.articleSlug}
-                    </Link>
-                    <span className="text-slate-400">·</span>
-                    <span className="text-slate-500">{daysAgo(f.createdAt)}</span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-slate-800">
-                    {f.body}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">最近内容更新</h2>
-            <Link
-              href="/admin/articles"
-              className="text-xs text-slate-500 hover:text-slate-900"
-            >
-              全部 →
-            </Link>
-          </div>
-          {recentArticles.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              还没有文章
-            </div>
-          ) : (
-            <ul className="mt-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-              {recentArticles.map((a) => (
-                <li key={a.slug} className="px-5 py-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                        a.status === "published"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-800"
-                      }`}
-                    >
-                      {a.status === "published" ? "已发布" : "草稿"}
-                    </span>
-                    <span className="font-mono text-slate-500">
-                      {a.kind === "topic" ? "📄 专题" : "📚 课时"}
-                    </span>
-                    <span className="text-slate-400">·</span>
-                    <span className="text-slate-500">{daysAgo(a.updatedAt)}</span>
-                  </div>
-                  <div className="mt-1 text-sm text-slate-800">{a.title}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </section>
 
-      {/* Recent users */}
-      <section className="mt-10">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">最近注册</h2>
-          <span className="text-xs text-slate-500">
-            共 {userCount} 个账号
-          </span>
-        </div>
-        {recentUsers.length === 0 ? (
-          <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-            还没有用户注册
-          </div>
-        ) : (
-          <ul className="mt-4 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-            {recentUsers.map((u) => (
-              <li key={u.id} className="flex items-center justify-between px-5 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-semibold text-white">
-                    {u.email.slice(0, 1).toUpperCase()}
+      {/* Two-column: recent articles + open feedback */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHead title="最近发布的文章" />
+          <ul className="divide-y divide-slate-100">
+            {recentArticles.length === 0 ? (
+              <EmptyRow text="还没有文章" />
+            ) : (
+              recentArticles.map((a) => (
+                <li
+                  key={a.slug}
+                  className="flex items-center gap-3 py-3 text-sm"
+                >
+                  <div className="min-w-0 flex-1 truncate text-slate-800">
+                    {a.title}
+                  </div>
+                  <StatusTag status={a.status} />
+                  <span className="w-16 shrink-0 text-right text-[12px] text-slate-500">
+                    {daysAgo(a.updatedAt)}
                   </span>
-                  <span className="text-sm text-slate-800">{u.email}</span>
-                  {u.role === "admin" && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-800">
-                      admin
-                    </span>
-                  )}
-                </div>
-                <span className="font-mono text-xs text-slate-500">
-                  {daysAgo(u.createdAt)}
-                </span>
-              </li>
-            ))}
+                </li>
+              ))
+            )}
           </ul>
-        )}
+          <CardFoot
+            href="/admin/articles"
+            label="查看全部文章"
+          />
+        </Card>
+
+        <Card>
+          <CardHead title="反馈待处理" />
+          <ul className="divide-y divide-slate-100">
+            {openFeedbackItems.length === 0 ? (
+              <EmptyRow text="暂无待处理反馈" />
+            ) : (
+              openFeedbackItems.map((f) => {
+                const preset = feedbackPreset(f.category);
+                return (
+                  <li
+                    key={f.id}
+                    className="flex items-start gap-3 py-3 text-sm"
+                  >
+                    <span
+                      className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${preset.tint}`}
+                      aria-label={preset.label}
+                      title={preset.label}
+                    >
+                      {preset.icon}
+                    </span>
+                    <p className="min-w-0 flex-1 line-clamp-2 leading-6 text-slate-700">
+                      {f.body}
+                    </p>
+                    <span className="w-16 shrink-0 text-right text-[12px] text-slate-500">
+                      {daysAgo(f.createdAt)}
+                    </span>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+          <CardFoot href="/admin/feedback" label="查看全部反馈" />
+        </Card>
+      </section>
+
+      {/* Stale content alert */}
+      <section>
+        <Card>
+          <CardHead title="内容过期预警" />
+          {staleTopics.length === 0 ? (
+            <EmptyRow text={`没有超过 ${STALE_DAYS} 天未验证的专题`} />
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {staleTopics.map((t) => {
+                const days = daysSince(t.lastVerifiedAt);
+                return (
+                  <li
+                    key={t.slug}
+                    className="flex items-center gap-3 py-3 text-sm"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-slate-800">
+                      {t.title}
+                    </span>
+                    <StaleTag days={days} />
+                    <Link
+                      href={`/topics/${t.slug}`}
+                      target="_blank"
+                      className="hidden truncate text-[12px] text-slate-500 hover:text-slate-900 md:inline-block md:w-56 md:text-right"
+                    >
+                      /topics/{t.slug}
+                    </Link>
+                    <Link
+                      href={`/admin/articles`}
+                      className="inline-flex h-8 shrink-0 items-center justify-center rounded-lg bg-orange-500 px-3 text-[12px] font-semibold text-white transition hover:bg-orange-600"
+                    >
+                      重新校验
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
       </section>
     </div>
   );
 }
 
-function Metric({
+function StatCard({
   label,
   value,
-  sub,
-  highlight,
+  icon,
+  tint,
+  delta,
+  deltaTone = "flat",
 }: {
   label: string;
   value: number | string;
-  sub?: string;
-  highlight?: boolean;
+  icon: ReactNode;
+  tint: string;
+  delta?: string;
+  deltaTone?: "up" | "down" | "flat";
 }) {
+  const deltaClass =
+    deltaTone === "up"
+      ? "text-emerald-600"
+      : deltaTone === "down"
+        ? "text-rose-600"
+        : "text-slate-400";
   return (
-    <div
-      className={`rounded-2xl border p-5 ${
-        highlight
-          ? "border-amber-300 bg-amber-50/50"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-        {label}
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(20,18,12,0.04)]">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] text-slate-500">{label}</span>
+        <span
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${tint}`}
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
       </div>
-      <div className="mt-2 text-3xl font-semibold tabular-nums text-slate-950">
+      <div className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
         {value}
       </div>
-      {sub && (
-        <div className="mt-1 text-xs text-slate-500">{sub}</div>
+      {delta && (
+        <div
+          className={`mt-1 inline-flex items-center gap-1 text-[12px] font-medium ${deltaClass}`}
+        >
+          {deltaTone === "up" && <span aria-hidden>↑</span>}
+          {deltaTone === "down" && <span aria-hidden>↓</span>}
+          <span>{delta}</span>
+        </div>
       )}
     </div>
+  );
+}
+
+function Card({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-5 pb-2 pt-5 shadow-[0_1px_2px_rgba(20,18,12,0.04)]">
+      {children}
+    </div>
+  );
+}
+
+function CardHead({ title }: { title: string }) {
+  return (
+    <div className="mb-2 flex items-center justify-between">
+      <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
+    </div>
+  );
+}
+
+function CardFoot({ href, label }: { href: string; label: string }) {
+  return (
+    <div className="mt-2 flex justify-center border-t border-slate-100 pt-3 pb-2">
+      <Link
+        href={href}
+        className="text-[12px] font-medium text-orange-600 transition hover:text-orange-700"
+      >
+        {label} →
+      </Link>
+    </div>
+  );
+}
+
+function EmptyRow({ text }: { text: string }) {
+  return (
+    <li className="py-8 text-center text-[13px] text-slate-400">{text}</li>
+  );
+}
+
+function StatusTag({ status }: { status: string }) {
+  if (status === "published") {
+    return (
+      <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-emerald-100 px-2 text-[11px] font-semibold text-emerald-700">
+        已发布
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-amber-100 px-2 text-[11px] font-semibold text-amber-700">
+      草稿
+    </span>
+  );
+}
+
+function StaleTag({ days }: { days: number | null }) {
+  const text = days == null ? "从未验证" : `${days} 天未 verified`;
+  return (
+    <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-orange-100 px-2 text-[11px] font-semibold text-orange-700">
+      {text}
+    </span>
+  );
+}
+
+/* ---------- icons ---------- */
+
+function DocumentIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 0 1-1-1V3.5z" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function BugIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="8" y="6" width="8" height="14" rx="4" />
+      <path d="M12 6V3" />
+      <path d="M2 13h4" />
+      <path d="M18 13h4" />
+      <path d="M3 6l3 2" />
+      <path d="M21 6l-3 2" />
+    </svg>
+  );
+}
+
+function ClockAlertIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function LightbulbIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2zm-2 19a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-1h-4v1z" />
+    </svg>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 21s-7-4.5-9.3-9A5.3 5.3 0 0 1 12 6a5.3 5.3 0 0 1 9.3 6c-2.3 4.5-9.3 9-9.3 9z" />
+    </svg>
+  );
+}
+
+function QuestionIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 1-1 1.7" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function DotIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden>
+      <circle cx="5" cy="5" r="3" />
+    </svg>
   );
 }

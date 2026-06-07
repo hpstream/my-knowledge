@@ -81,6 +81,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         estimatedMinutes: data.estimatedMinutes ?? null,
       }),
       ...(data.cost !== undefined && { cost: data.cost ?? null }),
+      ...(data.coverUrl !== undefined && { coverUrl: data.coverUrl ?? null }),
+      ...(data.tags !== undefined && { tagsJson: JSON.stringify(data.tags) }),
+      ...(data.ribbon !== undefined && { ribbon: data.ribbon ?? null }),
       ...(data.quiz !== undefined && { quizJson: JSON.stringify(data.quiz) }),
       ...(data.status !== undefined && { status: data.status }),
       ...(willPublish && !wasPublished

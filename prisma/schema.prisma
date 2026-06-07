@@ -63,6 +63,9 @@ model LearningPath {
   statusLabel    String?
   highlightsJson String    @default("[]")
   accent         String?
+  coverUrl       String?
+  tagsJson       String    @default("[]")
+  ribbon         String?
   status         String    @default("published")
   sortOrder      Int       @default(0)
   createdAt      DateTime  @default(now())
@@ -87,6 +90,9 @@ model Article {
   estimatedMinutes Int?
   difficulty       Int?
   cost             String?
+  coverUrl         String?
+  tagsJson         String    @default("[]")
+  ribbon           String?
   quizJson         String    @default("[]")
   status           String    @default("draft")
   lastVerifiedAt   DateTime?

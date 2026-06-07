@@ -1,9 +1,27 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArticleForm, type ArticleFormValues } from "@/components/admin/ArticleForm";
+import type { RibbonValue } from "@/components/admin/RibbonSelector";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+const RIBBON_VALUES = new Set(["精品", "推荐", "新品", "热门", "付费"]);
+
+function parseTags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRibbon(raw: string | null | undefined): RibbonValue {
+  if (raw && RIBBON_VALUES.has(raw)) return raw as RibbonValue;
+  return null;
+}
 
 export default async function EditArticlePage({
   params,
@@ -31,10 +49,6 @@ export default async function EditArticlePage({
   }
 
   const kind: "lesson" | "topic" = article.kind === "topic" ? "topic" : "lesson";
-  const previewHref =
-    kind === "topic"
-      ? `/topics/${article.slug}`
-      : `/paths/${article.pathSlug}/${article.slug}`;
 
   const initial: ArticleFormValues = {
     slug: article.slug,
@@ -48,46 +62,19 @@ export default async function EditArticlePage({
     difficulty: article.difficulty ?? "",
     estimatedMinutes: article.estimatedMinutes ?? "",
     cost: article.cost ?? "",
+    coverUrl: article.coverUrl ?? null,
+    tags: parseTags(article.tagsJson),
+    ribbon: normalizeRibbon(article.ribbon),
     quizJson: quizPretty,
     status: article.status === "published" ? "published" : "draft",
   };
 
   return (
-    <div>
-      <Link
-        href="/admin/articles"
-        className="text-sm text-slate-500 transition hover:text-slate-900"
-      >
-        ← 返回列表
-      </Link>
-      <div className="mt-6 mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-            Edit article · {kind}
-          </div>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.02em] text-slate-950">
-            编辑文章
-          </h1>
-          <p className="mt-2 text-sm text-slate-500">
-            <span className="font-mono">{previewHref}</span>
-          </p>
-        </div>
-        {article.status === "published" && (
-          <Link
-            href={previewHref}
-            target="_blank"
-            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
-          >
-            在前台查看 ↗
-          </Link>
-        )}
-      </div>
-      <ArticleForm
-        mode="edit"
-        articleId={article.id}
-        initial={initial}
-        pathOptions={paths}
-      />
-    </div>
+    <ArticleForm
+      mode="edit"
+      articleId={article.id}
+      initial={initial}
+      pathOptions={paths}
+    />
   );
 }

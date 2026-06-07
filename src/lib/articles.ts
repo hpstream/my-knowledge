@@ -84,10 +84,24 @@ export type TopicSummary = {
   difficulty: number | null;
   estimatedMinutes: number | null;
   cost: string | null;
+  coverUrl: string | null;
+  tags: string[];
+  ribbon: string | null;
   readMinutes: number;
   publishedAt: Date | null;
   lastVerifiedAt: Date | null;
 };
+
+function parseTags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
 
 const STALE_DAYS = 60;
 
@@ -108,12 +122,28 @@ export async function listPublishedTopics(): Promise<TopicSummary[]> {
       difficulty: true,
       estimatedMinutes: true,
       cost: true,
+      coverUrl: true,
+      tagsJson: true,
+      ribbon: true,
       readMinutes: true,
       publishedAt: true,
       lastVerifiedAt: true,
     },
   });
-  return rows;
+  return rows.map((r) => ({
+    slug: r.slug,
+    title: r.title,
+    summary: r.summary,
+    difficulty: r.difficulty,
+    estimatedMinutes: r.estimatedMinutes,
+    cost: r.cost,
+    coverUrl: r.coverUrl,
+    tags: parseTags(r.tagsJson),
+    ribbon: r.ribbon,
+    readMinutes: r.readMinutes,
+    publishedAt: r.publishedAt,
+    lastVerifiedAt: r.lastVerifiedAt,
+  }));
 }
 
 export type TopicDetail = {

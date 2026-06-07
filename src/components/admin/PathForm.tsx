@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { EditorBar } from "./EditorBar";
+import { CoverUpload } from "./CoverUpload";
+import { TagsInput } from "./TagsInput";
+import { RibbonSelector, type RibbonValue } from "./RibbonSelector";
+import {
+  EditorField,
+  EditorPanel,
+  StatusToggle,
+  editorInputClass,
+} from "./EditorPanel";
 
 export type PathFormValues = {
   title: string;
@@ -15,24 +26,44 @@ export type PathFormValues = {
   statusLabel: string;
   highlights: string[];
   accent: string;
+  coverUrl: string | null;
+  tags: string[];
+  ribbon: RibbonValue;
   status: "draft" | "published";
   sortOrder: number;
+};
+
+export type RelatedArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  order: number;
+  status: string;
+};
+
+export type PathStats = {
+  published: number;
+  draft: number;
+  feedback: number;
 };
 
 type Props = {
   mode: "create" | "edit";
   pathId?: string;
+  pathSlug?: string | null;
   initial: PathFormValues;
+  relatedArticles?: RelatedArticle[];
+  stats?: PathStats;
 };
 
-const ACCENT_OPTIONS = [
-  { value: "", label: "无" },
-  { value: "emerald", label: "Emerald 绿" },
-  { value: "amber", label: "Amber 琥珀" },
-  { value: "cyan", label: "Cyan 青" },
-];
-
-export function PathForm({ mode, pathId, initial }: Props) {
+export function PathForm({
+  mode,
+  pathId,
+  pathSlug,
+  initial,
+  relatedArticles = [],
+  stats,
+}: Props) {
   const router = useRouter();
   const [values, setValues] = useState<PathFormValues>(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -64,9 +95,16 @@ export function PathForm({ mode, pathId, initial }: Props) {
     }));
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function save(targetStatus: "draft" | "published") {
     setError(null);
+    if (!values.title.trim()) {
+      setError("请填写标题");
+      return;
+    }
+    if (!values.description.trim()) {
+      setError("请填写描述");
+      return;
+    }
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = {
@@ -83,7 +121,10 @@ export function PathForm({ mode, pathId, initial }: Props) {
           .map((h) => h.trim())
           .filter((h) => h.length > 0),
         accent: values.accent || null,
-        status: values.status,
+        coverUrl: values.coverUrl ?? null,
+        tags: values.tags,
+        ribbon: values.ribbon ?? null,
+        status: targetStatus,
         sortOrder: Number(values.sortOrder),
       };
 
@@ -112,7 +153,7 @@ export function PathForm({ mode, pathId, initial }: Props) {
         }
         return;
       }
-
+      setField("status", targetStatus);
       router.push("/admin/paths");
       router.refresh();
     } catch {
@@ -152,269 +193,259 @@ export function PathForm({ mode, pathId, initial }: Props) {
     }
   }
 
+  const crumbs = useMemo(
+    () => [
+      { label: "路径", href: "/admin/paths" },
+      { label: mode === "create" ? "新建路径" : "编辑路径" },
+    ],
+    [mode],
+  );
+  const publishLabel = values.status === "published" ? "保存修改" : "发布";
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <Field label="标题" htmlFor="title">
-        <input
-          id="title"
-          type="text"
-          required
-          value={values.title}
-          onChange={(e) => setField("title", e.target.value)}
-          className={inputClass}
-        />
-      </Field>
+    <div className="-mt-8 lg:-mt-10">
+      <EditorBar
+        backHref="/admin/paths"
+        crumbs={crumbs}
+        onSaveDraft={() => save("draft")}
+        onPublish={() => save("published")}
+        onDelete={mode === "edit" ? handleDelete : undefined}
+        deleteLabel="删除路径"
+        publishLabel={publishLabel}
+        submitting={submitting}
+        rightMeta={pathSlug ? <span className="font-mono">/paths/{pathSlug}</span> : null}
+      />
 
-      <Field label="描述" htmlFor="description">
-        <textarea
-          id="description"
-          required
-          rows={3}
-          value={values.description}
-          onChange={(e) => setField("description", e.target.value)}
-          className={inputClass}
-        />
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="分类 (category)" htmlFor="category">
-          <input
-            id="category"
-            type="text"
-            value={values.category}
-            onChange={(e) => setField("category", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="难度 (level)" htmlFor="level">
-          <input
-            id="level"
-            type="text"
-            value={values.level}
-            onChange={(e) => setField("level", e.target.value)}
-            className={inputClass}
-            placeholder="Beginner / Intermediate / Advanced"
-          />
-        </Field>
-        <Field label="预计时长（小时）" htmlFor="estimatedHours">
-          <input
-            id="estimatedHours"
-            type="number"
-            min={0.5}
-            step={0.5}
-            required
-            value={values.estimatedHours}
-            onChange={(e) =>
-              setField("estimatedHours", Number(e.target.value))
-            }
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="徽章文案 (badge)" htmlFor="badge" hint="例：Free Starter">
-          <input
-            id="badge"
-            type="text"
-            value={values.badge}
-            onChange={(e) => setField("badge", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="状态标签 (statusLabel)" htmlFor="statusLabel" hint="例：适合立即开始">
-          <input
-            id="statusLabel"
-            type="text"
-            value={values.statusLabel}
-            onChange={(e) => setField("statusLabel", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="收费方式" htmlFor="pricing">
-          <div className="flex gap-2">
-            {(["free", "paid"] as const).map((p) => (
-              <label
-                key={p}
-                className={`flex flex-1 cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-sm transition ${
-                  values.pricing === p
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="pricing"
-                  value={p}
-                  checked={values.pricing === p}
-                  onChange={() => setField("pricing", p)}
-                  className="sr-only"
-                />
-                {p === "free" ? "免费" : "付费"}
-              </label>
-            ))}
-          </div>
-        </Field>
-        <Field label="价格文案 (priceLabel)" htmlFor="priceLabel" hint="例：免费 / ¥299">
-          <input
-            id="priceLabel"
-            type="text"
-            value={values.priceLabel}
-            onChange={(e) => setField("priceLabel", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="强调色 (accent)" htmlFor="accent">
-          <select
-            id="accent"
-            value={values.accent}
-            onChange={(e) => setField("accent", e.target.value)}
-            className={inputClass}
-          >
-            {ACCENT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-
-      <Field label="亮点列表 (highlights)" htmlFor="highlights">
-        <div className="space-y-2">
-          {values.highlights.map((h, idx) => (
-            <div key={idx} className="flex gap-2">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {/* LEFT — form */}
+        <div className="space-y-4">
+          <EditorPanel>
+            <EditorField label="标题" htmlFor="title">
               <input
+                id="title"
                 type="text"
-                value={h}
-                onChange={(e) => updateHighlight(idx, e.target.value)}
-                className={inputClass}
-                placeholder="例：5 篇真实文章 + 配套小测"
+                required
+                value={values.title}
+                onChange={(e) => setField("title", e.target.value)}
+                className={`${editorInputClass} text-[15px]`}
+                placeholder="把想法跑成网站"
               />
+            </EditorField>
+
+            <div className="mt-4">
+              <EditorField label="描述" htmlFor="description" hint="一两句话讲清这条路径解决谁的什么问题">
+                <textarea
+                  id="description"
+                  required
+                  rows={3}
+                  value={values.description}
+                  onChange={(e) => setField("description", e.target.value)}
+                  className={editorInputClass}
+                  placeholder="从 0 到 1 搭建一个上线的网站，掌握 AI 编程与部署的完整流程。"
+                />
+              </EditorField>
+            </div>
+          </EditorPanel>
+
+          <EditorPanel title="定价">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <EditorField label="收费方式" htmlFor="pricing">
+                <StatusToggle
+                  name="收费"
+                  value={values.pricing}
+                  onChange={(v) => setField("pricing", v)}
+                  options={[
+                    { value: "free", label: "免费" },
+                    { value: "paid", label: "付费" },
+                  ]}
+                />
+              </EditorField>
+              <EditorField label="价格文案" htmlFor="priceLabel" hint="例：免费 / ¥299">
+                <input
+                  id="priceLabel"
+                  type="text"
+                  value={values.priceLabel}
+                  onChange={(e) => setField("priceLabel", e.target.value)}
+                  className={editorInputClass}
+                />
+              </EditorField>
+            </div>
+          </EditorPanel>
+
+          <EditorPanel
+            title="课程亮点"
+            action={
               <button
                 type="button"
-                onClick={() => removeHighlight(idx)}
-                className="rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 transition hover:border-rose-300 hover:text-rose-600"
-                aria-label="删除这条亮点"
+                onClick={addHighlight}
+                className="text-[12px] font-medium text-orange-600 transition hover:text-orange-700"
               >
-                ×
+                + 添加亮点
               </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={addHighlight}
-            className="text-sm text-emerald-700 transition hover:text-emerald-800"
+            }
           >
-            + 添加亮点
-          </button>
-        </div>
-      </Field>
+            {values.highlights.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-[12px] text-slate-400">
+                还没有亮点，点上方「+ 添加亮点」开始填写
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {values.highlights.map((h, idx) => (
+                  <li key={idx} className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <input
+                      type="text"
+                      value={h}
+                      onChange={(e) => updateHighlight(idx, e.target.value)}
+                      className={editorInputClass}
+                      placeholder="例：5 篇真实文章 + 配套小测"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeHighlight(idx)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                      aria-label="删除这条亮点"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </EditorPanel>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="状态" htmlFor="status">
-          <div className="flex gap-2">
-            {(["draft", "published"] as const).map((s) => (
-              <label
-                key={s}
-                className={`flex flex-1 cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-sm transition ${
-                  values.status === s
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="status"
-                  value={s}
-                  checked={values.status === s}
-                  onChange={() => setField("status", s)}
-                  className="sr-only"
-                />
-                {s === "draft" ? "草稿" : "立即发布"}
-              </label>
-            ))}
-          </div>
-        </Field>
-        <Field label="排序 (sortOrder)" htmlFor="sortOrder" hint="数字小的优先展示">
-          <input
-            id="sortOrder"
-            type="number"
-            value={values.sortOrder}
-            onChange={(e) => setField("sortOrder", Number(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      )}
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          {mode === "edit" && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={submitting}
-              className="text-sm text-rose-600 transition hover:text-rose-700 disabled:opacity-40"
-            >
-              删除路径
-            </button>
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
           )}
         </div>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            disabled={submitting}
-            className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 disabled:opacity-40"
+
+        {/* RIGHT — sidebar */}
+        <aside className="space-y-4">
+          <EditorPanel title="封面">
+            <CoverUpload
+              value={values.coverUrl}
+              onChange={(url) => setField("coverUrl", url)}
+              folder="paths"
+            />
+          </EditorPanel>
+
+          <EditorPanel title="标签" hint="搜索用">
+            <TagsInput
+              value={values.tags}
+              onChange={(tags) => setField("tags", tags)}
+              placeholder="如：AI、入门、副业"
+            />
+          </EditorPanel>
+
+          <EditorPanel title="推荐角标" hint="卡片右上角，只展示">
+            <RibbonSelector
+              value={values.ribbon}
+              onChange={(v) => setField("ribbon", v)}
+            />
+          </EditorPanel>
+
+          <EditorPanel title="状态">
+            <StatusToggle
+              name="发布状态"
+              value={values.status}
+              onChange={(v) => setField("status", v)}
+              options={[
+                { value: "draft", label: "草稿" },
+                { value: "published", label: "已发布" },
+              ]}
+            />
+          </EditorPanel>
+
+          <EditorPanel
+            title={`关联文章（${relatedArticles.length} 篇）`}
+            action={
+              <Link
+                href="/admin/articles"
+                className="text-[12px] font-medium text-orange-600 hover:text-orange-700"
+              >
+                管理 →
+              </Link>
+            }
           >
-            取消
-          </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-40"
-          >
-            {submitting ? "保存中…" : mode === "create" ? "创建路径" : "保存修改"}
-          </button>
-        </div>
+            {relatedArticles.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-[12px] text-slate-400">
+                还没有关联文章
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {relatedArticles.slice(0, 8).map((a, idx) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <span className="w-6 shrink-0 font-mono text-[11px] text-slate-400">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
+                    <Link
+                      href={`/admin/articles`}
+                      className="min-w-0 flex-1 truncate hover:text-slate-900"
+                      title={a.title}
+                    >
+                      {a.title}
+                    </Link>
+                    {a.status !== "published" && (
+                      <span className="shrink-0 rounded bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700">
+                        草稿
+                      </span>
+                    )}
+                  </li>
+                ))}
+                {relatedArticles.length > 8 && (
+                  <li className="text-center text-[11px] text-slate-400">
+                    还有 {relatedArticles.length - 8} 篇…
+                  </li>
+                )}
+              </ul>
+            )}
+          </EditorPanel>
+
+          {stats && (
+            <EditorPanel title="完成统计">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <Stat label="已发布" value={stats.published} tone="emerald" />
+                <Stat label="草稿" value={stats.draft} tone="amber" />
+                <Stat label="反馈" value={stats.feedback} tone="orange" />
+              </div>
+            </EditorPanel>
+          )}
+
+        </aside>
       </div>
-    </form>
-  );
-}
-
-const inputClass =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200";
-
-function Field({
-  label,
-  htmlFor,
-  hint,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label
-        htmlFor={htmlFor}
-        className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-500"
-      >
-        {label}
-      </label>
-      <div className="mt-2">{children}</div>
-      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
     </div>
   );
 }
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "emerald" | "amber" | "orange";
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "text-emerald-600"
+      : tone === "amber"
+        ? "text-amber-600"
+        : "text-orange-600";
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-2.5">
+      <div className={`text-lg font-bold tabular-nums ${toneClass}`}>
+        {value}
+      </div>
+      <div className="text-[11px] text-slate-500">{label}</div>
+    </div>
+  );
+}
+

@@ -1,9 +1,31 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PathForm, type PathFormValues } from "@/components/admin/PathForm";
+import {
+  PathForm,
+  type PathFormValues,
+  type RelatedArticle,
+} from "@/components/admin/PathForm";
+import type { RibbonValue } from "@/components/admin/RibbonSelector";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+
+const RIBBON_VALUES = new Set(["精品", "推荐", "新品", "热门", "付费"]);
+
+function parseStringArray(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRibbon(raw: string | null | undefined): RibbonValue {
+  if (raw && RIBBON_VALUES.has(raw)) return raw as RibbonValue;
+  return null;
+}
 
 export default async function EditPathPage({
   params,
@@ -14,13 +36,39 @@ export default async function EditPathPage({
   const row = await prisma.learningPath.findUnique({ where: { id } });
   if (!row) notFound();
 
-  let highlights: string[] = [];
-  try {
-    const parsed = JSON.parse(row.highlightsJson || "[]");
-    if (Array.isArray(parsed)) highlights = parsed.filter((s) => typeof s === "string");
-  } catch {
-    highlights = [];
-  }
+  const [articles, articleCounts, feedbackCount] = await Promise.all([
+    prisma.article.findMany({
+      where: { pathSlug: row.slug },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      select: { id: true, slug: true, title: true, order: true, status: true },
+    }),
+    prisma.article.groupBy({
+      by: ["status"],
+      where: { pathSlug: row.slug },
+      _count: { _all: true },
+    }),
+    prisma.articleFeedback.count({
+      where: {
+        articleSlug: {
+          in: (
+            await prisma.article.findMany({
+              where: { pathSlug: row.slug },
+              select: { slug: true },
+            })
+          ).map((a) => a.slug),
+        },
+      },
+    }),
+  ]);
+
+  const stats = {
+    published:
+      articleCounts.find((c) => c.status === "published")?._count._all ?? 0,
+    draft: articleCounts.find((c) => c.status === "draft")?._count._all ?? 0,
+    feedback: feedbackCount,
+  };
+
+  const highlights = parseStringArray(row.highlightsJson);
 
   const initial: PathFormValues = {
     title: row.title,
@@ -34,39 +82,29 @@ export default async function EditPathPage({
     statusLabel: row.statusLabel ?? "",
     highlights,
     accent: row.accent ?? "",
+    coverUrl: row.coverUrl ?? null,
+    tags: parseStringArray(row.tagsJson),
+    ribbon: normalizeRibbon(row.ribbon),
     status: row.status === "published" ? "published" : "draft",
     sortOrder: row.sortOrder,
   };
 
+  const relatedArticles: RelatedArticle[] = articles.map((a) => ({
+    id: a.id,
+    slug: a.slug,
+    title: a.title,
+    order: a.order,
+    status: a.status,
+  }));
+
   return (
-    <div>
-      <Link
-        href="/admin/paths"
-        className="text-sm text-slate-500 transition hover:text-slate-900"
-      >
-        ← 返回列表
-      </Link>
-      <div className="mt-6 mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-            Edit path
-          </div>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.02em] text-slate-950">
-            编辑学习路径
-          </h1>
-          <p className="mt-2 font-mono text-sm text-slate-500">/paths/{row.slug}</p>
-        </div>
-        {row.status === "published" && (
-          <Link
-            href={`/paths/${row.slug}`}
-            target="_blank"
-            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 transition hover:border-slate-400"
-          >
-            在前台查看 ↗
-          </Link>
-        )}
-      </div>
-      <PathForm mode="edit" pathId={row.id} initial={initial} />
-    </div>
+    <PathForm
+      mode="edit"
+      pathId={row.id}
+      pathSlug={row.slug}
+      initial={initial}
+      relatedArticles={relatedArticles}
+      stats={stats}
+    />
   );
 }
