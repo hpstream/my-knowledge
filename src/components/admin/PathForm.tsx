@@ -20,6 +20,7 @@ export type PathFormValues = {
   estimatedHours: number;
   level: string;
   category: string;
+  categoryId: string;
   badge: string;
   pricing: "free" | "paid";
   priceLabel: string;
@@ -47,20 +48,30 @@ export type PathStats = {
   feedback: number;
 };
 
+export type CategoryOption = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 type Props = {
   mode: "create" | "edit";
   pathId?: string;
   pathSlug?: string | null;
   initial: PathFormValues;
+  categoryOptions: CategoryOption[];
   relatedArticles?: RelatedArticle[];
   stats?: PathStats;
 };
+
+const LEVEL_OPTIONS = ["入门", "进阶", "高阶"] as const;
 
 export function PathForm({
   mode,
   pathId,
   pathSlug,
   initial,
+  categoryOptions,
   relatedArticles = [],
   stats,
 }: Props) {
@@ -113,6 +124,7 @@ export function PathForm({
         estimatedHours: Number(values.estimatedHours),
         level: values.level.trim() || "Beginner",
         category: values.category.trim() || "AI Engineering",
+        categoryId: values.categoryId || null,
         badge: values.badge.trim() || null,
         pricing: values.pricing,
         priceLabel: values.priceLabel.trim() || null,
@@ -143,9 +155,11 @@ export function PathForm({
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as {
           error?: string;
+          issues?: Record<string, unknown>;
         };
         if (data.error === "VALIDATION_ERROR") {
-          setError("字段校验失败，请检查所有必填项");
+          const issueText = JSON.stringify(data.issues ?? {}, null, 2);
+          setError(`字段校验失败，请检查所有必填项\n${issueText}`);
         } else if (data.error === "FORBIDDEN") {
           setError("权限不足");
         } else {
@@ -243,6 +257,76 @@ export function PathForm({
                   className={editorInputClass}
                   placeholder="从 0 到 1 搭建一个上线的网站，掌握 AI 编程与部署的完整流程。"
                 />
+              </EditorField>
+            </div>
+          </EditorPanel>
+
+          <EditorPanel title="排序与基础信息">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <EditorField label="预计时长（小时）" htmlFor="estimatedHours">
+                <input
+                  id="estimatedHours"
+                  type="number"
+                  min={0.5}
+                  step={0.5}
+                  value={values.estimatedHours}
+                  onChange={(e) =>
+                    setField("estimatedHours", Number(e.target.value))
+                  }
+                  className={editorInputClass}
+                />
+              </EditorField>
+              <EditorField label="排序值" htmlFor="sortOrder" hint="越小越靠前，首页和列表都按它排序">
+                <input
+                  id="sortOrder"
+                  type="number"
+                  value={values.sortOrder}
+                  onChange={(e) =>
+                    setField("sortOrder", Number(e.target.value))
+                  }
+                  className={editorInputClass}
+                />
+              </EditorField>
+              <EditorField label="难度 / 级别" htmlFor="level">
+                <select
+                  id="level"
+                  value={values.level}
+                  onChange={(e) => setField("level", e.target.value)}
+                  className={editorInputClass}
+                >
+                  {LEVEL_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </EditorField>
+              <EditorField label="分类" htmlFor="categoryId">
+                <select
+                  id="categoryId"
+                  value={values.categoryId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const nextCategory =
+                      categoryOptions.find((option) => option.id === nextId)
+                        ?.name ?? "";
+                    setValues((prev) => ({
+                      ...prev,
+                      categoryId: nextId,
+                      category: nextCategory,
+                    }));
+                  }}
+                  className={editorInputClass}
+                >
+                  <option value="" disabled>
+                    — 选择分类 —
+                  </option>
+                  {categoryOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
               </EditorField>
             </div>
           </EditorPanel>

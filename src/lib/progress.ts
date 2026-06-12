@@ -127,3 +127,25 @@ export async function completeQuiz(
     return null;
   }
 }
+
+// 没题的文章：点"下一篇"时也把当前这篇标记为完成。
+export async function completeLesson(
+  pathSlug: string,
+  lessonSlug: string,
+): Promise<ArticleProgress | null> {
+  try {
+    const res = await fetch("/api/progress/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pathSlug, lessonSlug }),
+    });
+    if (!res.ok) return null;
+    const raw = (await res.json()) as RawProgress;
+    const updated = normalize({ [lessonSlug]: raw })[lessonSlug];
+    if (cache) cache[lessonSlug] = updated;
+    notify();
+    return updated;
+  } catch {
+    return null;
+  }
+}

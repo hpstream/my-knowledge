@@ -67,6 +67,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       }),
       ...(data.level !== undefined && { level: data.level }),
       ...(data.category !== undefined && { category: data.category }),
+      ...(data.categoryId !== undefined && {
+        categoryId: data.categoryId ?? null,
+      }),
       ...(data.badge !== undefined && { badge: data.badge ?? null }),
       ...(data.pricing !== undefined && { pricing: data.pricing }),
       ...(data.priceLabel !== undefined && {

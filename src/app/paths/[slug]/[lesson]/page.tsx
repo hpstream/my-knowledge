@@ -5,6 +5,7 @@ import { ArticleMarkdown } from "@/components/ArticleMarkdown";
 import { QuizModalTrigger } from "@/components/QuizModalTrigger";
 import { FeedbackTrigger } from "@/components/article/FeedbackTrigger";
 import { PathLessonOutline } from "@/components/path/PathLessonOutline";
+import { LessonPagerNav } from "@/components/path/LessonPagerNav";
 import { SiteFooter } from "@/components/SiteFooter";
 
 export async function generateStaticParams() {
@@ -31,12 +32,11 @@ export default async function LessonPage({
   const data = await getPathWithArticles(slug);
   if (!data) notFound();
 
-  const idx = data.articles.findIndex(
-    (a) => a.frontmatter.slug === lesson,
-  );
+  const idx = data.articles.findIndex((a) => a.frontmatter.slug === lesson);
   if (idx < 0) notFound();
 
   const article = data.articles[idx];
+  const prev = data.articles[idx - 1] ?? null;
   const next = data.articles[idx + 1] ?? null;
   const { frontmatter, body } = article;
 
@@ -116,6 +116,32 @@ export default async function LessonPage({
                   <FeedbackTrigger articleSlug={frontmatter.slug} />
                 </div>
               </div>
+
+              {frontmatter.quiz.length === 0 && (prev || next) && (
+                <LessonPagerNav
+                  pathSlug={slug}
+                  pathTitle={data.learningPath.title}
+                  currentSlug={frontmatter.slug}
+                  prev={
+                    prev
+                      ? {
+                          slug: prev.frontmatter.slug,
+                          title: prev.frontmatter.title,
+                          order: prev.frontmatter.order,
+                        }
+                      : null
+                  }
+                  next={
+                    next
+                      ? {
+                          slug: next.frontmatter.slug,
+                          title: next.frontmatter.title,
+                          order: next.frontmatter.order,
+                        }
+                      : null
+                  }
+                />
+              )}
             </article>
           </div>
         </div>

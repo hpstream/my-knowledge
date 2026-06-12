@@ -39,6 +39,12 @@ const NAV_ITEMS: Array<{
     icon: <PathIcon />,
   },
   {
+    href: "/admin/categories",
+    label: "分类",
+    match: (p) => p.startsWith("/admin/categories"),
+    icon: <CategoryIcon />,
+  },
+  {
     href: "/admin/feedback",
     label: "反馈",
     match: (p) => p.startsWith("/admin/feedback"),
@@ -237,6 +243,25 @@ function PathIcon() {
       <circle cx="6" cy="5" r="2" />
       <circle cx="18" cy="19" r="2" />
       <path d="M6 7v3a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v1" />
+    </svg>
+  );
+}
+
+function CategoryIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7h6l2-2h10v14H3z" />
+      <path d="M3 11h18" />
     </svg>
   );
 }

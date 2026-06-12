@@ -73,6 +73,8 @@ export default async function AdminPathsPage() {
                       /paths/{p.slug}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span>排序 {p.sortOrder}</span>
+                      <span className="h-1 w-1 rounded-full bg-slate-300" />
                       <span>{p.category}</span>
                       <span className="h-1 w-1 rounded-full bg-slate-300" />
                       <span>{p.level}</span>

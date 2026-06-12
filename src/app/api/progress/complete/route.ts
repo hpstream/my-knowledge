@@ -6,10 +6,14 @@ import { markComplete } from "@/lib/server-progress";
 const schema = z.object({
   pathSlug: z.string().min(1).max(100),
   lessonSlug: z.string().min(1).max(100),
-  score: z.object({
-    correct: z.number().int().nonnegative(),
-    total: z.number().int().positive(),
-  }),
+  // 没题的文章可以不传 score（点"下一篇"也算完成）
+  score: z
+    .object({
+      correct: z.number().int().nonnegative(),
+      total: z.number().int().positive(),
+    })
+    .optional()
+    .nullable(),
 });
 
 export async function POST(req: NextRequest) {
@@ -34,7 +38,7 @@ export async function POST(req: NextRequest) {
     user.id,
     parsed.data.pathSlug,
     parsed.data.lessonSlug,
-    parsed.data.score,
+    parsed.data.score ?? null,
   );
   return NextResponse.json(updated);
 }

@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
       estimatedHours: data.estimatedHours,
       level: data.level,
       category: data.category,
+      categoryId: data.categoryId ?? null,
       badge: data.badge ?? null,
       pricing: data.pricing,
       priceLabel: data.priceLabel ?? null,

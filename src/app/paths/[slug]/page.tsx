@@ -92,11 +92,23 @@ export default async function PathPage({
               )}
             </div>
 
-            <div className="hidden aspect-[4/3] items-center justify-center rounded-2xl bg-amber-100 lg:flex">
-              <span className="text-7xl opacity-60" aria-hidden>
-                📒
-              </span>
-            </div>
+            {learningPath.coverUrl ? (
+              <div className="hidden aspect-[4/3] overflow-hidden rounded-2xl bg-amber-100 lg:block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={learningPath.coverUrl}
+                  alt={learningPath.title}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ) : (
+              <div className="hidden aspect-[4/3] items-center justify-center rounded-2xl bg-amber-100 lg:flex">
+                <span className="text-7xl opacity-60" aria-hidden>
+                  📒
+                </span>
+              </div>
+            )}
           </div>
 
           {learningPath.highlights.length > 0 && (

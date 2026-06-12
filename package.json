@@ -13,6 +13,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:topics": "tsx prisma/seed-topics.ts",
     "db:seed:series": "tsx prisma/seed-series.ts",
+    "db:seed:articles": "tsx prisma/seed-article-folders.ts",
     "image:generate": "node scripts/generate-image.mjs",
     "postinstall": "prisma generate"
   },

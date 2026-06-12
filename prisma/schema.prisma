@@ -57,6 +57,7 @@ model LearningPath {
   estimatedHours Float     @default(2)
   level          String    @default("Beginner")
   category       String    @default("AI Engineering")
+  categoryId     String?
   badge          String?
   pricing        String    @default("free")
   priceLabel     String?
@@ -72,9 +73,27 @@ model LearningPath {
   updatedAt      DateTime  @updatedAt
   publishedAt    DateTime?
 
+  categoryRef PathCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
   @@index([slug])
   @@index([status])
   @@index([pricing])
+  @@index([categoryId])
+}
+
+model PathCategory {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String   @unique
+  sortOrder Int      @default(0)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paths LearningPath[]
+
+  @@index([sortOrder])
+  @@index([status])
 }
 
 model Article {

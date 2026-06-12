@@ -36,7 +36,7 @@ export default async function EditPathPage({
   const row = await prisma.learningPath.findUnique({ where: { id } });
   if (!row) notFound();
 
-  const [articles, articleCounts, feedbackCount] = await Promise.all([
+  const [articles, articleCounts, feedbackCount, categoryOptions] = await Promise.all([
     prisma.article.findMany({
       where: { pathSlug: row.slug },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
@@ -59,6 +59,11 @@ export default async function EditPathPage({
         },
       },
     }),
+    prisma.pathCategory.findMany({
+      where: { status: "active" },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true, slug: true },
+    }),
   ]);
 
   const stats = {
@@ -76,6 +81,7 @@ export default async function EditPathPage({
     estimatedHours: row.estimatedHours,
     level: row.level,
     category: row.category,
+    categoryId: row.categoryId ?? categoryOptions.find((option) => option.name === row.category)?.id ?? "",
     badge: row.badge ?? "",
     pricing: row.pricing === "paid" ? "paid" : "free",
     priceLabel: row.priceLabel ?? "",
@@ -103,6 +109,7 @@ export default async function EditPathPage({
       pathId={row.id}
       pathSlug={row.slug}
       initial={initial}
+      categoryOptions={categoryOptions}
       relatedArticles={relatedArticles}
       stats={stats}
     />

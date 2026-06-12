@@ -88,7 +88,7 @@ export async function markComplete(
   userId: string,
   pathSlug: string,
   lessonSlug: string,
-  score: { correct: number; total: number },
+  score: { correct: number; total: number } | null,
 ): Promise<ServerArticleProgress> {
   const upserted = await prisma.userLessonProgress.upsert({
     where: { userId_lessonSlug: { userId, lessonSlug } },
@@ -97,13 +97,13 @@ export async function markComplete(
       pathSlug,
       lessonSlug,
       completedAt: new Date(),
-      scoreCorrect: score.correct,
-      scoreTotal: score.total,
+      scoreCorrect: score?.correct ?? null,
+      scoreTotal: score?.total ?? null,
     },
     update: {
       completedAt: new Date(),
-      scoreCorrect: score.correct,
-      scoreTotal: score.total,
+      scoreCorrect: score?.correct ?? null,
+      scoreTotal: score?.total ?? null,
     },
   });
   return rowToProgress(upserted);

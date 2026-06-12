@@ -1,4 +1,5 @@
 import { PathForm, type PathFormValues } from "@/components/admin/PathForm";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,8 @@ const blank: PathFormValues = {
   description: "",
   estimatedHours: 2,
   level: "入门",
-  category: "AI Engineering",
+  category: "",
+  categoryId: "",
   badge: "",
   pricing: "free",
   priceLabel: "免费",
@@ -21,6 +23,18 @@ const blank: PathFormValues = {
   sortOrder: 0,
 };
 
-export default function NewPathPage() {
-  return <PathForm mode="create" initial={blank} />;
+export default async function NewPathPage() {
+  const categoryOptions = await prisma.pathCategory.findMany({
+    where: { status: "active" },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, slug: true },
+  });
+
+  const initial = {
+    ...blank,
+    categoryId: categoryOptions[0]?.id ?? "",
+    category: categoryOptions[0]?.name ?? "",
+  };
+
+  return <PathForm mode="create" initial={initial} categoryOptions={categoryOptions} />;
 }
