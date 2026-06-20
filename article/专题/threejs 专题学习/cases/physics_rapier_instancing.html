@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - rapier3d instancing</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - rapier3d instancing">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_rapier_instancing.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_rapier_instancing.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/dimforge/rapier.js" target="_blank">rapier</a> instancing<br />
+			<button id="shake" style="margin-top: 25px;">SHAKE</button>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_rapier_instancing.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习如何让成百上千个相同物体既用 InstancedMesh 高效渲染，又拥有独立物理状态。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. InstancedMesh
+			 * 2. DynamicDrawUsage
+			 * 3. 实例级物理体
+			 * 4. applyImpulse
+			 * 5. setMeshPosition
+			 * 6. 渲染性能和物理性能
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   boxes = new THREE.InstancedMesh( geometryBox, material, 400 );
+			 *   boxes.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+			 *   boxes.userData.physics = { mass: 1 };
+			 *   
+			 *   spheres = new THREE.InstancedMesh( geometrySphere, material, 400 );
+			 *   spheres.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+			 *   spheres.userData.physics = { mass: 1 };
+			 *   
+			 *   physics.addScene( scene );
+			 *   physics.applyImpulse( spheres, impulse, i );
+			 *   physics.applyImpulse( boxes, impulse, i );
+			 *   physics.setMeshPosition( boxes, position, index );
+			 *
+			 * 这些代码在做什么：
+			 * 1. InstancedMesh 让很多相同模型共享几何体和材质，适合大数量物体。
+			 * 2. DynamicDrawUsage 表示 instanceMatrix 会频繁变化，提示 GPU 这份数据是动态更新的。
+			 * 3. userData.physics 给每个实例创建对应的物理体，而不是只给整个 InstancedMesh 一个碰撞体。
+			 * 4. applyImpulse(boxes, impulse, i) 对第 i 个实例施加冲量，所以每个实例可以独立被撞飞。
+			 * 5. setMeshPosition 可以把某个实例重新放到指定位置，常用于重置、刷怪、循环掉落。
+			 * 6. 这个案例的价值是把“很多东西”从视觉复制推进到真实可交互。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做大量可碰撞砖块、球池、碎石
+			 * 2. 做物理性能压测
+			 * 3. 做批量掉落、撒落、爆炸效果
+			 * 4. 做编辑器里的可交互散布物
+			 * 5. 扩展成实例化粒子和刚体混合系统
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_rapier_instancing.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RapierPhysics } from 'three/addons/physics/RapierPhysics.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats;
+			let physics, position;
+
+			let boxes, spheres;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				physics = await RapierPhysics();
+				position = new THREE.Vector3();
+
+				//
+
+				camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( - 1, 1.5, 2 );
+				camera.lookAt( 0, 0.5, 0 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x666666 );
+
+				const hemiLight = new THREE.HemisphereLight();
+				scene.add( hemiLight );
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
+				dirLight.position.set( 5, 5, 5 );
+				dirLight.castShadow = true;
+				dirLight.shadow.camera.zoom = 2;
+				scene.add( dirLight );
+
+				const shadowPlane = new THREE.Mesh(
+					new THREE.PlaneGeometry( 10, 10 ),
+					new THREE.ShadowMaterial( {
+						color: 0x444444
+					} ),
+				);
+				shadowPlane.rotation.x = - Math.PI / 2;
+				shadowPlane.receiveShadow = true;
+				scene.add( shadowPlane );
+
+				const floorCollider = new THREE.Mesh(
+					new THREE.BoxGeometry( 10, 5, 10 ),
+					new THREE.MeshBasicMaterial( { color: 0x666666 } )
+				);
+				floorCollider.position.y = - 2.5;
+				floorCollider.userData.physics = { mass: 0 };
+				floorCollider.visible = false;
+				scene.add( floorCollider );
+
+				//
+
+				const material = new THREE.MeshLambertMaterial();
+
+				const matrix = new THREE.Matrix4();
+				const color = new THREE.Color();
+
+				// Boxes
+
+				const geometryBox = new THREE.BoxGeometry( 0.075, 0.075, 0.075 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：InstancedMesh 让很多相同模型共享几何体和材质，适合大数量物体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				boxes = new THREE.InstancedMesh( geometryBox, material, 400 );
+				boxes.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+				boxes.castShadow = true;
+				boxes.receiveShadow = true;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：DynamicDrawUsage 表示 instanceMatrix 会频繁变化，提示 GPU 这份数据是动态更新的。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				boxes.userData.physics = { mass: 1 };
+				scene.add( boxes );
+
+				for ( let i = 0; i < boxes.count; i ++ ) {
+
+					matrix.setPosition( Math.random() - 0.5, Math.random() * 2, Math.random() - 0.5 );
+					boxes.setMatrixAt( i, matrix );
+					boxes.setColorAt( i, color.setHex( 0xffffff * Math.random() ) );
+
+				}
+
+				// Spheres
+
+				const geometrySphere = new THREE.IcosahedronGeometry( 0.05, 4 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：userData.physics 给每个实例创建对应的物理体，而不是只给整个 InstancedMesh 一个碰撞体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				spheres = new THREE.InstancedMesh( geometrySphere, material, 400 );
+				spheres.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+				spheres.castShadow = true;
+				spheres.receiveShadow = true;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：applyImpulse(boxes, impulse, i) 对第 i 个实例施加冲量，所以每个实例可以独立被撞飞。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				spheres.userData.physics = { mass: 1 };
+				scene.add( spheres );
+
+				for ( let i = 0; i < spheres.count; i ++ ) {
+
+					matrix.setPosition( Math.random() - 0.5, Math.random() * 2, Math.random() - 0.5 );
+					spheres.setMatrixAt( i, matrix );
+					spheres.setColorAt( i, color.setHex( 0xffffff * Math.random() ) );
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：setMeshPosition 可以把某个实例重新放到指定位置，常用于重置、刷怪、循环掉落。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics.addScene( scene );
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				//
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.target.y = 0.5;
+				controls.update();
+
+				document.querySelector( 'button#shake' ).addEventListener( 'click', () => {
+
+					const impulse = new THREE.Vector3();
+
+					for ( let i = 0; i < spheres.count; i ++ ) {
+
+						impulse.set( ( Math.random() - 0.5 ) * 5, Math.random() * 5, ( Math.random() - 0.5 ) * 5 );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：这个案例的价值是把“很多东西”从视觉复制推进到真实可交互。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						physics.applyImpulse( spheres, impulse, i );
+
+					}
+
+					for ( let i = 0; i < boxes.count; i ++ ) {
+
+						impulse.set( ( Math.random() - 0.5 ) * 5, Math.random() * 5, ( Math.random() - 0.5 ) * 5 );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：这个案例的价值是把“很多东西”从视觉复制推进到真实可交互。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						physics.applyImpulse( boxes, impulse, i );
+
+					}
+
+				} );
+
+				setInterval( () => {
+
+					let index = Math.floor( Math.random() * boxes.count );
+
+					position.set( 0, Math.random() + 1, 0 );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：这个案例的价值是把“很多东西”从视觉复制推进到真实可交互。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					physics.setMeshPosition( boxes, position, index );
+
+					//
+
+					index = Math.floor( Math.random() * spheres.count );
+
+					position.set( 0, Math.random() + 1, 0 );
+					physics.setMeshPosition( spheres, position, index );
+
+				}, 1000 / 60 );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

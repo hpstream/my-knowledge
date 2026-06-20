@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>three.js webgl - lights - rect area light</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<meta property="og:title" content="three.js webgl - lights - rect area light">
+	<meta property="og:type" content="website">
+	<meta property="og:url" content="https://threejs.org/examples/webgl_lights_rectarealight.html">
+	<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_lights_rectarealight.jpg">
+	<link type="text/css" rel="stylesheet" href="main.css">
+</head>
+
+<body>
+
+	<div id="info">
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - THREE.RectAreaLight<br />
+		by <a href="http://github.com/abelnation" target="_blank" rel="noopener">abelnation</a>
+	</div>
+
+	<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+	<script type="module">
+
+
+		/* THREE_TOPIC_LEARNING_NOTES_START
+		 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+		 * 案例：webgl_lights_rectarealight.html
+		 * 分组：B｜光照材质
+		 * 目标：学习有面积的矩形光源如何形成柔和照明和宽高可控的高光形状。
+		 *
+		 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+		 *
+		 * 核心知识点：
+		 * 1. RectAreaLight 有宽高
+		 * 2. 需要 RectAreaLightUniformsLib.init
+		 * 3. RectAreaLightHelper 显示面光位置
+		 * 4. 面光适合柔光和高光，不适合常规投影
+		 * 5. 光滑材质更容易看出面光形状
+		 *
+		 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+		 *   RectAreaLightUniformsLib.init();
+		 *   
+		 *   rectLight1 = new THREE.RectAreaLight( 0xff0000, 5, 4, 10 );
+		 *   rectLight1.position.set( - 5, 6, 5 );
+		 *   scene.add( rectLight1 );
+		 *   scene.add( new RectAreaLightHelper( rectLight1 ) );
+		 *
+		 * 这些代码在做什么：
+		 * 1. RectAreaLight 的参数是 color、intensity、width、height。
+		 * 2. width/height 决定光源形状，也影响高光形状。
+		 * 3. RectAreaLightUniformsLib.init 是必要初始化。
+		 * 4. helper 是可视化矩形发光面，方便调方向和位置。
+		 * 5. 案例让三个面光旋转，是为了观察面光朝向变化对高光的影响。
+		 *
+		 * 学完后可以迁移到：
+		 * 1. 摄影棚柔光
+		 * 2. 窗户光
+		 * 3. 灯带/屏幕光
+		 * 4. 汽车和手机高光
+		 * 5. 产品展示棚拍
+		 *
+		 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_lights_rectarealight.md
+		 * THREE_TOPIC_LEARNING_NOTES_END */
+		import * as THREE from 'three';
+
+		import Stats from 'three/addons/libs/stats.module.js';
+
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
+		import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+
+		let renderer, scene, camera;
+		let rectLight1, rectLight2, rectLight3;
+		let timer, stats;
+
+		init();
+		/* THREE_TOPIC_INIT_NOTE_START
+		 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+		 * THREE_TOPIC_INIT_NOTE_END */
+
+
+		function init() {
+
+			timer = new THREE.Timer();
+
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.setAnimationLoop(animation);
+			document.body.appendChild(renderer.domElement);
+
+			camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+			camera.position.set(0, 5, - 15);
+
+			scene = new THREE.Scene();
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：RectAreaLight 的参数是 color、intensity、width、height。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			RectAreaLightUniformsLib.init();
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：width/height 决定光源形状，也影响高光形状。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			rectLight1 = new THREE.RectAreaLight(0xff0000, 5, 4, 10);
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：RectAreaLightUniformsLib.init 是必要初始化。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			rectLight1.position.set(- 5, 6, 5);
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：helper 是可视化矩形发光面，方便调方向和位置。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			scene.add(rectLight1);
+
+			rectLight2 = new THREE.RectAreaLight(0x00ff00, 5, 4, 10);
+			rectLight2.position.set(0, 6, 5);
+			scene.add(rectLight2);
+
+			rectLight3 = new THREE.RectAreaLight(0x0000ff, 5, 4, 10);
+			rectLight3.position.set(5, 6, 5);
+			scene.add(rectLight3);
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：案例让三个面光旋转，是为了观察面光朝向变化对高光的影响。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			scene.add(new RectAreaLightHelper(rectLight1));
+			scene.add(new RectAreaLightHelper(rectLight2));
+			scene.add(new RectAreaLightHelper(rectLight3));
+
+			const geoFloor = new THREE.BoxGeometry(2000, 0.1, 2000);
+			const matStdFloor = new THREE.MeshStandardMaterial({ color: 0x444444 });
+			matStdFloor.roughnessMap = createCheckerTexture(400);
+			const mshStdFloor = new THREE.Mesh(geoFloor, matStdFloor);
+			scene.add(mshStdFloor);
+
+			const geoKnot = new THREE.TorusKnotGeometry(1.5, 0.5, 200, 16);
+			const matKnot = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0, metalness: 0 });
+			const meshKnot = new THREE.Mesh(geoKnot, matKnot);
+			meshKnot.position.set(0, 5.5, 0);
+			scene.add(meshKnot);
+
+			const controls = new OrbitControls(camera, renderer.domElement);
+			controls.target.copy(meshKnot.position);
+			controls.update();
+
+			//
+
+			window.addEventListener('resize', onWindowResize);
+
+			stats = new Stats();
+			document.body.appendChild(stats.dom);
+
+		}
+
+		function createCheckerTexture(repeat = 1) {
+
+			const canvas = document.createElement('canvas');
+			canvas.width = 2;
+			canvas.height = 2;
+
+			const ctx = canvas.getContext('2d');
+			ctx.fillStyle = '#000';
+			ctx.fillRect(0, 0, 2, 2);
+			ctx.fillStyle = '#fff';
+			ctx.fillRect(0, 0, 1, 1);
+			ctx.fillRect(1, 1, 1, 1);
+
+			const texture = new THREE.CanvasTexture(canvas);
+			texture.repeat.set(repeat, repeat);
+			texture.magFilter = THREE.NearestFilter;
+			texture.wrapS = THREE.RepeatWrapping;
+			texture.wrapT = THREE.RepeatWrapping;
+
+			return texture;
+
+		}
+		/* THREE_TOPIC_RESIZE_NOTE_START
+		 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+		 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+		function onWindowResize() {
+
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			camera.aspect = (window.innerWidth / window.innerHeight);
+			camera.updateProjectionMatrix();
+
+		}
+
+		function animation() {
+
+			timer.update();
+
+			const delta = timer.getDelta();
+
+			rectLight1.rotation.y += - delta;
+			rectLight2.rotation.y += delta * .5;
+			rectLight3.rotation.y += delta;
+
+			renderer.render(scene, camera);
+
+			stats.update();
+
+		}
+
+	</script>
+</body>
+
+</html>

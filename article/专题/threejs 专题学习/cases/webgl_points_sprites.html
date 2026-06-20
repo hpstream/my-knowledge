@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - particles - sprites</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - particles - sprites">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_points_sprites.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_points_sprites.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - webgl particle sprites example<br/>
+			snowflakes by <a href="http://en.wikipedia.org/wiki/File:Sketch_of_snow_crystal_by_Ren%C3%A9_Descartes.jpg">Ren&eacute;  Descartes</a>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_points_sprites.html
+			 * 分组：E｜性能大量对象和后处理
+			 * 目标：学习用 Points 和贴图点精灵渲染大量小元素，而不是为每个点创建独立 Mesh。
+			 *
+			 * 阅读顺序：先找 InstancedMesh / Points / EffectComposer，再看每帧更新的数据量。性能类案例要重点区分 CPU 创建对象、GPU draw call、纹理/后处理成本。
+			 *
+			 * 核心知识点：
+			 * 1. Points 使用 BufferGeometry 的 position 属性
+			 * 2. PointsMaterial 可以设置 size 和 map
+			 * 3. 每个顶点就是一个点精灵
+			 * 4. 适合远处/小尺寸/数量多的元素
+			 * 5. 不适合需要真实体积和复杂光照的对象
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const geometry = new THREE.BufferGeometry();
+			 *   geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+			 *   
+			 *   materials[ i ] = new THREE.PointsMaterial( { size: size, map: sprite, blending: THREE.AdditiveBlending, depthTest: false, transparent: true } );
+			 *   materials[ i ].color.setHSL( color[ 0 ], color[ 1 ], color[ 2 ], THREE.SRGBColorSpace );
+			 *   
+			 *   const particles = new THREE.Points( geometry, materials[ i ] );
+			 *   scene.add( particles );
+			 *
+			 * 这些代码在做什么：
+			 * 1. BufferGeometry 里每三个数字是一点的 x/y/z。
+			 * 2. PointsMaterial 的 map 是每个点显示的贴图。
+			 * 3. Points 通常只有屏幕对齐的视觉面片，不是完整 3D 几何。
+			 * 4. size 控制点在屏幕中的大小，数量很多时比 Mesh 便宜。
+			 * 5. 如果要每个粒子独立旋转、受光、碰撞，Points 可能不够。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 星空
+			 * 2. 雪花/火花
+			 * 3. 点云
+			 * 4. 传感器点位
+			 * 5. 远处植被/装饰粒子
+			 *
+			 * 对应讲解文档：../官方案例讲解/E-性能大量对象后处理/webgl_points_sprites.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+			let camera, scene, renderer, stats, parameters;
+			let mouseX = 0, mouseY = 0;
+
+			let windowHalfX = window.innerWidth / 2;
+			let windowHalfY = window.innerHeight / 2;
+
+			const materials = [];
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.z = 1000;
+
+				scene = new THREE.Scene();
+				scene.fog = new THREE.FogExp2( 0x000000, 0.0008 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：BufferGeometry 里每三个数字是一点的 x/y/z。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const geometry = new THREE.BufferGeometry();
+				const vertices = [];
+
+				const textureLoader = new THREE.TextureLoader();
+
+				const assignSRGB = ( texture ) => {
+
+					texture.colorSpace = THREE.SRGBColorSpace;
+
+				};
+
+				const sprite1 = textureLoader.load( 'textures/sprites/snowflake1.png', assignSRGB );
+				const sprite2 = textureLoader.load( 'textures/sprites/snowflake2.png', assignSRGB );
+				const sprite3 = textureLoader.load( 'textures/sprites/snowflake3.png', assignSRGB );
+				const sprite4 = textureLoader.load( 'textures/sprites/snowflake4.png', assignSRGB );
+				const sprite5 = textureLoader.load( 'textures/sprites/snowflake5.png', assignSRGB );
+
+				for ( let i = 0; i < 10000; i ++ ) {
+
+					const x = Math.random() * 2000 - 1000;
+					const y = Math.random() * 2000 - 1000;
+					const z = Math.random() * 2000 - 1000;
+
+					vertices.push( x, y, z );
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：PointsMaterial 的 map 是每个点显示的贴图。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+
+				parameters = [
+					[[ 1.0, 0.2, 0.5 ], sprite2, 20 ],
+					[[ 0.95, 0.1, 0.5 ], sprite3, 15 ],
+					[[ 0.90, 0.05, 0.5 ], sprite1, 10 ],
+					[[ 0.85, 0, 0.5 ], sprite5, 8 ],
+					[[ 0.80, 0, 0.5 ], sprite4, 5 ]
+				];
+
+				for ( let i = 0; i < parameters.length; i ++ ) {
+
+					const color = parameters[ i ][ 0 ];
+					const sprite = parameters[ i ][ 1 ];
+					const size = parameters[ i ][ 2 ];
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：Points 通常只有屏幕对齐的视觉面片，不是完整 3D 几何。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					materials[ i ] = new THREE.PointsMaterial( { size: size, map: sprite, blending: THREE.AdditiveBlending, depthTest: false, transparent: true } );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：size 控制点在屏幕中的大小，数量很多时比 Mesh 便宜。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					materials[ i ].color.setHSL( color[ 0 ], color[ 1 ], color[ 2 ], THREE.SRGBColorSpace );
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：如果要每个粒子独立旋转、受光、碰撞，Points 可能不够。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const particles = new THREE.Points( geometry, materials[ i ] );
+
+					particles.rotation.x = Math.random() * 6;
+					particles.rotation.y = Math.random() * 6;
+					particles.rotation.z = Math.random() * 6;
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：如果要每个粒子独立旋转、受光、碰撞，Points 可能不够。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					scene.add( particles );
+
+				}
+
+				//
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				//
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				//
+
+				const gui = new GUI();
+
+				const params = {
+					texture: true
+				};
+
+				gui.add( params, 'texture' ).onChange( function ( value ) {
+
+					for ( let i = 0; i < materials.length; i ++ ) {
+
+						materials[ i ].map = ( value === true ) ? parameters[ i ][ 1 ] : null;
+						materials[ i ].needsUpdate = true;
+
+					}
+
+				} );
+
+				gui.open();
+
+				document.body.style.touchAction = 'none';
+				document.body.addEventListener( 'pointermove', onPointerMove );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+				windowHalfY = window.innerHeight / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onPointerMove( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				mouseX = event.clientX - windowHalfX;
+				mouseY = event.clientY - windowHalfY;
+
+			}
+
+			//
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				render();
+				stats.update();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				const time = Date.now() * 0.00005;
+
+				camera.position.x += ( mouseX - camera.position.x ) * 0.05;
+				camera.position.y += ( - mouseY - camera.position.y ) * 0.05;
+
+				camera.lookAt( scene.position );
+
+				for ( let i = 0; i < scene.children.length; i ++ ) {
+
+					const object = scene.children[ i ];
+
+					if ( object instanceof THREE.Points ) {
+
+						object.rotation.y = time * ( i < 4 ? i + 1 : - ( i + 1 ) );
+
+					}
+
+				}
+
+				for ( let i = 0; i < materials.length; i ++ ) {
+
+					const color = parameters[ i ][ 0 ];
+
+					const h = ( 360 * ( color[ 0 ] + time ) % 360 ) / 360;
+					materials[ i ].color.setHSL( h, color[ 1 ], color[ 2 ], THREE.SRGBColorSpace );
+
+				}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - rapier3d basic</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - rapier3d basic">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_rapier_basic.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_rapier_basic.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				color: #333;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/dimforge/rapier.js" target="_blank">rapier</a> basic
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_rapier_basic.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习 Rapier 在 Three 中的最小接入方式：场景、地面、动态刚体、反弹系数和物理调试器。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. RapierPhysics 初始化
+			 * 2. physics.addScene
+			 * 3. 静态刚体 mass 0
+			 * 4. 动态刚体 mass 1
+			 * 5. restitution 反弹
+			 * 6. RapierHelper 调试碰撞体
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   physics = await RapierPhysics();
+			 *   physics.addScene( scene );
+			 *   
+			 *   floor.userData.physics = { mass: 0 };
+			 *   
+			 *   physics.addMesh( mesh, 1, 0.5 );
+			 *   
+			 *   physicsHelper = new RapierHelper( physics.world );
+			 *   scene.add( physicsHelper );
+			 *   
+			 *   if ( physicsHelper ) physicsHelper.update();
+			 *
+			 * 这些代码在做什么：
+			 * 1. RapierPhysics 是 three/examples 里的官方辅助封装，帮你把 Three 网格和 Rapier 刚体连接起来。
+			 * 2. mass: 0 表示静态物体，地面不会被撞飞，但动态物体可以落在它上面。
+			 * 3. physics.addMesh(mesh, 1, 0.5) 给 mesh 创建质量为 1、反弹系数为 0.5 的刚体。
+			 * 4. 物体运动由 Rapier 计算，Three 每帧读取物理体的位置和旋转来显示。
+			 * 5. RapierHelper 显示碰撞体轮廓，用来检查“看到的模型”和“真实碰撞体”是否一致，每帧 update 才会跟上物理世界变化。
+			 * 6. 这是后续角色控制、车辆、关节、实例化物理的基础。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做掉落、堆叠、碰撞小游戏
+			 * 2. 给产品展示加简单物理互动
+			 * 3. 做物理教学的质量和反弹实验
+			 * 4. 作为角色、车辆、关节案例的起点
+			 * 5. 扩展成可拖拽物理积木
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_rapier_basic.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RapierPhysics } from 'three/addons/physics/RapierPhysics.js';
+			import { RapierHelper } from 'three/addons/helpers/RapierHelper.js';
+			import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats, controls;
+			let physics, physicsHelper;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xbfd1e5 );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 3, 10 );
+
+				const ambient = new THREE.HemisphereLight( 0x555555, 0xFFFFFF );
+
+				scene.add( ambient );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 4 );
+
+				light.position.set( 0, 12.5, 12.5 );
+				light.castShadow = true;
+				light.shadow.radius = 3;
+				light.shadow.blurSamples = 8;
+				light.shadow.mapSize.width = 1024;
+				light.shadow.mapSize.height = 1024;
+
+				const size = 10;
+				light.shadow.camera.left = - size;
+				light.shadow.camera.bottom = - size;
+				light.shadow.camera.right = size;
+				light.shadow.camera.top = size;
+				light.shadow.camera.near = 1;
+				light.shadow.camera.far = 50;
+
+				scene.add( light );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+				renderer.setAnimationLoop( animate );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.enableDamping = true;
+				controls.target = new THREE.Vector3( 0, 2, 0 );
+				controls.update();
+
+				const geometry = new THREE.BoxGeometry( 10, 0.5, 10 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xFFFFFF } );
+
+				const floor = new THREE.Mesh( geometry, material );
+				floor.receiveShadow = true;
+
+				floor.position.y = - 0.25;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：physics.addMesh(mesh, 1, 0.5) 给 mesh 创建质量为 1、反弹系数为 0.5 的刚体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				floor.userData.physics = { mass: 0 };
+
+				scene.add( floor );
+
+				new THREE.TextureLoader().load( 'textures/grid.png', function ( texture ) {
+
+					texture.wrapS = THREE.RepeatWrapping;
+					texture.wrapT = THREE.RepeatWrapping;
+					texture.repeat.set( 20, 20 );
+					floor.material.map = texture;
+					floor.material.needsUpdate = true;
+
+				} );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				initPhysics();
+
+				onWindowResize();
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			async function initPhysics() {
+
+				//Initialize physics engine using the script in the jsm/physics folder
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：RapierPhysics 是 three/examples 里的官方辅助封装，帮你把 Three 网格和 Rapier 刚体连接起来。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics = await RapierPhysics();
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：mass: 0 表示静态物体，地面不会被撞飞，但动态物体可以落在它上面。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics.addScene( scene );
+
+				addBody( );
+
+				//Optionally display collider outlines
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：RapierHelper 显示碰撞体轮廓，用来检查“看到的模型”和“真实碰撞体”是否一致，每帧 update 才会跟上物理世界变化。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physicsHelper = new RapierHelper( physics.world );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：这是后续角色控制、车辆、关节、实例化物理的基础。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.add( physicsHelper );
+
+				setInterval( addBody, 1000 );
+
+			}
+
+			const geometries = [
+				new THREE.BoxGeometry( 1, 1, 1 ),
+				new THREE.SphereGeometry( 0.5 ),
+				new RoundedBoxGeometry( 1, 1, 1, 2, 0.25 )
+			];
+
+			function addBody( ) {
+
+				const geometry = geometries[ Math.floor( Math.random() * geometries.length ) ];
+				const material = new THREE.MeshStandardMaterial( { color: Math.floor( Math.random() * 0xFFFFFF ) } );
+
+				const mesh = new THREE.Mesh( geometry, material );
+				mesh.castShadow = true;
+
+				mesh.position.set( Math.random() * 2 - 1, Math.random() * 3 + 6, Math.random() * 2 - 1 );
+
+				scene.add( mesh );
+
+				//parameter 2 - mass, parameter 3 - restitution ( how bouncy )
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：物体运动由 Rapier 计算，Three 每帧读取物理体的位置和旋转来显示。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics.addMesh( mesh, 1, 0.5 );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize( ) {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				for ( const object of scene.children ) {
+
+					if ( object.isMesh ) {
+
+						if ( object.position.y < - 10 ) {
+
+							scene.remove( object );
+							physics.removeMesh( object );
+
+						}
+			
+					}
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：这是后续角色控制、车辆、关节、实例化物理的基础。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				if ( physicsHelper ) physicsHelper.update();
+
+				controls.update();
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

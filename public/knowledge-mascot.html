@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLB Mascot Preview</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f6f8fb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #status {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.85);
+      color: #526175;
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(20, 36, 62, 0.08);
+    }
+
+    #status:empty {
+      display: none;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.124.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.124.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.124.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="status">Loading models/knowledge-mascot.glb...</div>
+
+  <script>
+    const modelUrl = "models/knowledge-mascot.glb";
+    const canvas = document.querySelector("#scene");
+    const status = document.querySelector("#status");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf6f8fb);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(3.7, 2.45, 5.25);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.shadowMap.enabled = true;
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.55, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.1;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xd8e3ef, 2.2));
+
+    const light = new THREE.DirectionalLight(0xffffff, 3);
+    light.position.set(4, 6, 5);
+    scene.add(light);
+
+    new THREE.GLTFLoader().load(
+      modelUrl,
+      function (gltf) {
+        const model = gltf.scene;
+        model.rotation.y = -0.18;
+        model.traverse(function (object) {
+          if (object.isMesh && object.material) {
+            object.material.flatShading = true;
+            object.material.needsUpdate = true;
+          }
+        });
+        scene.add(model);
+        status.textContent = "";
+      },
+      undefined,
+      function (error) {
+        console.error(error);
+        status.textContent = "Failed to load " + modelUrl;
+      }
+    );
+
+    window.addEventListener("resize", function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    renderer.setAnimationLoop(function () {
+      controls.update();
+      renderer.render(scene, camera);
+    });
+  </script>
+</body>
+</html>

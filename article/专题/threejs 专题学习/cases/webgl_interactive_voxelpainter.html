@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - interactive - voxel painter</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - interactive - voxel painter">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_interactive_voxelpainter.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_interactive_voxelpainter.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #f0f0f0;
+				color: #444;
+			}
+			a {
+				color: #08f;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - voxel painter - webgl<br>
+			<strong>click</strong>: add voxel, <strong>shift + click</strong>: remove voxel
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_interactive_voxelpainter.html
+			 * 分组：D｜交互编辑
+			 * 目标：学习如何用 Raycaster、法线方向和网格吸附实现“点击放置方块、按键删除方块”的编辑器能力。
+			 *
+			 * 阅读顺序：先找事件监听和 Raycaster / Controls，再看命中结果如何改变对象。交互编辑类案例要重点理解“屏幕坐标如何变成 3D 操作”。
+			 *
+			 * 核心知识点：
+			 * 1. 射线命中平面或已有方块
+			 * 2. 使用 intersect.face.normal 决定新方块贴在哪一侧
+			 * 3. 坐标除以网格尺寸后 floor，再回到中心点
+			 * 4. objects 数组决定哪些对象可被拾取
+			 * 5. rollOverMesh 是预览，不是真方块
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   raycaster.setFromCamera( pointer, camera );
+			 *   const intersects = raycaster.intersectObjects( objects, false );
+			 *   
+			 *   if ( intersects.length > 0 ) {
+			 *     const intersect = intersects[ 0 ];
+			 *     rollOverMesh.position.copy( intersect.point ).add( intersect.face.normal );
+			 *     rollOverMesh.position.divideScalar( 50 ).floor().multiplyScalar( 50 ).addScalar( 25 );
+			 *   }
+			 *
+			 * 这些代码在做什么：
+			 * 1. intersect.point 是射线打到表面的世界坐标。
+			 * 2. intersect.face.normal 表示被打中面的法线方向，新方块要沿这个方向偏移一格。
+			 * 3. divide/floor/multiply/addScalar 是典型网格吸附：把任意坐标归到 50 单位格子的中心。
+			 * 4. rollOverMesh 只是半透明预览，用来告诉用户将要放在哪里。
+			 * 5. 真正放置时会创建新的 cube mesh，并加入 scene 和 objects 数组，之后它也能被继续拾取。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. Minecraft 式编辑器
+			 * 2. 关卡编辑器
+			 * 3. 建筑草图工具
+			 * 4. 网格化搭建工具
+			 * 5. 教学用空间坐标练习
+			 *
+			 * 对应讲解文档：../官方案例讲解/D-交互编辑/webgl_interactive_voxelpainter.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			let camera, scene, renderer;
+			let plane;
+			let pointer, raycaster, isShiftDown = false;
+
+			let rollOverMesh, rollOverMaterial;
+			let cubeGeo, cubeMaterial;
+
+			const objects = [];
+
+			init();
+			render();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 10000 );
+				camera.position.set( 500, 800, 1300 );
+				camera.lookAt( 0, 0, 0 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xf0f0f0 );
+
+				// roll-over helpers
+
+				const rollOverGeo = new THREE.BoxGeometry( 50, 50, 50 );
+				rollOverMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, opacity: 0.5, transparent: true } );
+				rollOverMesh = new THREE.Mesh( rollOverGeo, rollOverMaterial );
+				scene.add( rollOverMesh );
+
+				// cubes
+
+				const map = new THREE.TextureLoader().load( 'textures/square-outline-textured.png' );
+				map.colorSpace = THREE.SRGBColorSpace;
+				cubeGeo = new THREE.BoxGeometry( 50, 50, 50 );
+				cubeMaterial = new THREE.MeshLambertMaterial( { color: 0xfeb74c, map: map } );
+
+				// grid
+
+				const gridHelper = new THREE.GridHelper( 1000, 20 );
+				scene.add( gridHelper );
+
+				//
+
+				raycaster = new THREE.Raycaster();
+				pointer = new THREE.Vector2();
+
+				const geometry = new THREE.PlaneGeometry( 1000, 1000 );
+				geometry.rotateX( - Math.PI / 2 );
+
+				plane = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { visible: false } ) );
+				scene.add( plane );
+
+				objects.push( plane );
+
+				// lights
+
+				const ambientLight = new THREE.AmbientLight( 0x606060, 3 );
+				scene.add( ambientLight );
+
+				const directionalLight = new THREE.DirectionalLight( 0xffffff, 3 );
+				directionalLight.position.set( 1, 0.75, 0.5 ).normalize();
+				scene.add( directionalLight );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				document.addEventListener( 'pointermove', onPointerMove );
+				document.addEventListener( 'pointerdown', onPointerDown );
+				document.addEventListener( 'keydown', onDocumentKeyDown );
+				document.addEventListener( 'keyup', onDocumentKeyUp );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				render();
+
+			}
+
+			function onPointerMove( event ) {
+
+				pointer.set( ( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：intersect.point 是射线打到表面的世界坐标。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				raycaster.setFromCamera( pointer, camera );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：intersect.face.normal 表示被打中面的法线方向，新方块要沿这个方向偏移一格。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const intersects = raycaster.intersectObjects( objects, false );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：divide/floor/multiply/addScalar 是典型网格吸附：把任意坐标归到 50 单位格子的中心。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				if ( intersects.length > 0 ) {
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：rollOverMesh 只是半透明预览，用来告诉用户将要放在哪里。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const intersect = intersects[ 0 ];
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：真正放置时会创建新的 cube mesh，并加入 scene 和 objects 数组，之后它也能被继续拾取。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					rollOverMesh.position.copy( intersect.point ).add( intersect.face.normal );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：真正放置时会创建新的 cube mesh，并加入 scene 和 objects 数组，之后它也能被继续拾取。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					rollOverMesh.position.divideScalar( 50 ).floor().multiplyScalar( 50 ).addScalar( 25 );
+
+					render();
+
+				}
+
+			}
+
+			function onPointerDown( event ) {
+
+				pointer.set( ( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1 );
+
+				raycaster.setFromCamera( pointer, camera );
+
+				const intersects = raycaster.intersectObjects( objects, false );
+
+				if ( intersects.length > 0 ) {
+
+					const intersect = intersects[ 0 ];
+
+					// delete cube
+
+					if ( isShiftDown ) {
+
+						if ( intersect.object !== plane ) {
+
+							scene.remove( intersect.object );
+
+							objects.splice( objects.indexOf( intersect.object ), 1 );
+
+						}
+
+						// create cube
+
+					} else {
+
+						const voxel = new THREE.Mesh( cubeGeo, cubeMaterial );
+						voxel.position.copy( intersect.point ).add( intersect.face.normal );
+						voxel.position.divideScalar( 50 ).floor().multiplyScalar( 50 ).addScalar( 25 );
+						scene.add( voxel );
+
+						objects.push( voxel );
+
+					}
+
+					render();
+
+				}
+
+			}
+
+			function onDocumentKeyDown( event ) {
+
+				switch ( event.keyCode ) {
+
+					case 16: isShiftDown = true; break;
+
+				}
+
+			}
+
+			function onDocumentKeyUp( event ) {
+
+				switch ( event.keyCode ) {
+
+					case 16: isShiftDown = false; break;
+
+				}
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

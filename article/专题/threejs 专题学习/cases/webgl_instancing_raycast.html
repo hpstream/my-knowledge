@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - instancing - raycast</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - instancing - raycast">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_instancing_raycast.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_instancing_raycast.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_instancing_raycast.html
+			 * 分组：D｜交互编辑
+			 * 目标：学习 Raycaster 命中 InstancedMesh 后如何通过 instanceId 找到具体实例，并修改单个实例的颜色或状态。
+			 *
+			 * 阅读顺序：先找事件监听和 Raycaster / Controls，再看命中结果如何改变对象。交互编辑类案例要重点理解“屏幕坐标如何变成 3D 操作”。
+			 *
+			 * 核心知识点：
+			 * 1. InstancedMesh 多个实例共享 geometry/material
+			 * 2. raycast 结果包含 instanceId
+			 * 3. setColorAt 修改单个实例颜色
+			 * 4. instanceColor.needsUpdate 提交颜色变化
+			 * 5. 适合大量重复对象拾取
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const intersection = raycaster.intersectObject( mesh );
+			 *   if ( intersection.length > 0 ) {
+			 *     const instanceId = intersection[ 0 ].instanceId;
+			 *     mesh.setColorAt( instanceId, color.setHex( Math.random() * 0xffffff ) );
+			 *     mesh.instanceColor.needsUpdate = true;
+			 *   }
+			 *
+			 * 这些代码在做什么：
+			 * 1. 普通 Mesh 命中后拿 object 就够了，InstancedMesh 还需要 instanceId 区分具体哪一个实例。
+			 * 2. setColorAt 不会创建新 material，只更新实例颜色 buffer。
+			 * 3. 修改实例矩阵或颜色后要标记 needsUpdate。
+			 * 4. 这比给每个对象创建独立 Mesh 更省 draw call。
+			 * 5. 业务状态可以用 instanceId 映射到自己的数据数组。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 楼盘户型选择
+			 * 2. 仓库货架点选
+			 * 3. 大规模格子地图
+			 * 4. 粒子式对象选择
+			 * 5. 城市建筑批量交互
+			 *
+			 * 对应讲解文档：../官方案例讲解/D-交互编辑/webgl_instancing_raycast.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+			let camera, scene, renderer, controls, stats;
+
+			let mesh;
+			const amount = parseInt( window.location.search.slice( 1 ) ) || 10;
+			const count = Math.pow( amount, 3 );
+
+			const raycaster = new THREE.Raycaster();
+			const mouse = new THREE.Vector2( 1, 1 );
+
+			const color = new THREE.Color();
+			const white = new THREE.Color().setHex( 0xffffff );
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( amount, amount, amount );
+				camera.lookAt( 0, 0, 0 );
+
+				scene = new THREE.Scene();
+
+				const light = new THREE.HemisphereLight( 0xffffff, 0x888888, 3 );
+				light.position.set( 0, 1, 0 );
+				scene.add( light );
+
+				const geometry = new THREE.IcosahedronGeometry( 0.5, 3 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff } );
+
+				mesh = new THREE.InstancedMesh( geometry, material, count );
+
+				let i = 0;
+				const offset = ( amount - 1 ) / 2;
+
+				const matrix = new THREE.Matrix4();
+
+				for ( let x = 0; x < amount; x ++ ) {
+
+					for ( let y = 0; y < amount; y ++ ) {
+
+						for ( let z = 0; z < amount; z ++ ) {
+
+							matrix.setPosition( offset - x, offset - y, offset - z );
+
+							mesh.setMatrixAt( i, matrix );
+							mesh.setColorAt( i, color );
+
+							i ++;
+
+						}
+
+					}
+
+				}
+
+				scene.add( mesh );
+
+				//
+
+				const gui = new GUI();
+				gui.add( mesh, 'count', 0, count );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.enableDamping = true;
+				controls.enableZoom = false;
+				controls.enablePan = false;
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				window.addEventListener( 'resize', onWindowResize );
+				document.addEventListener( 'mousemove', onMouseMove );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onMouseMove( event ) {
+
+				event.preventDefault();
+
+				mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+				mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				controls.update();
+
+				raycaster.setFromCamera( mouse, camera );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：普通 Mesh 命中后拿 object 就够了，InstancedMesh 还需要 instanceId 区分具体哪一个实例。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const intersection = raycaster.intersectObject( mesh );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：setColorAt 不会创建新 material，只更新实例颜色 buffer。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				if ( intersection.length > 0 ) {
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：修改实例矩阵或颜色后要标记 needsUpdate。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const instanceId = intersection[ 0 ].instanceId;
+
+					mesh.getColorAt( instanceId, color );
+
+					if ( color.equals( white ) ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：这比给每个对象创建独立 Mesh 更省 draw call。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						mesh.setColorAt( instanceId, color.setHex( Math.random() * 0xffffff ) );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：业务状态可以用 instanceId 映射到自己的数据数组。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						mesh.instanceColor.needsUpdate = true;
+
+					}
+
+				}
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

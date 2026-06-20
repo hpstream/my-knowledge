@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - tone mapping</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - tone mapping">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_tonemapping.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_tonemapping.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - Tone Mapping<br />
+			Venice Mask by
+			<a href="https://sketchfab.com/D.art" target="_blank" rel="noopener">DailyArt</a> is licensed under <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC Attribution-NonCommercial</a><br />
+			<a href="https://hdrihaven.com/hdri/?h=venice_sunset" target="_blank" rel="noopener">Venice Sunset</a> from <a href="https://hdrihaven.com/" target="_blank" rel="noopener">HDRI Haven</a>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_tonemapping.html
+			 * 分组：B｜光照材质
+			 * 目标：学习高亮、HDR 环境和 PBR 模型最终如何被压到屏幕可显示范围，以及不同 tone mapping 算法的观感差异。
+			 *
+			 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+			 *
+			 * 核心知识点：
+			 * 1. toneMapping 是输出阶段处理，不是灯光
+			 * 2. exposure 是进入 tone mapping 前的亮度倍数
+			 * 3. HDR 环境提供超出 0-1 的亮度
+			 * 4. None 会隐藏 exposure 控制
+			 * 5. 背景 blurriness/intensity 只影响背景观感
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   renderer.toneMapping = toneMappingOptions[ params.toneMapping ];
+			 *   renderer.toneMappingExposure = params.exposure;
+			 *   
+			 *   texture.mapping = THREE.EquirectangularReflectionMapping;
+			 *   scene.background = texture;
+			 *   scene.environment = texture;
+			 *   
+			 *   guiExposure = toneMappingFolder.add( params, 'exposure', 0, 2 )
+			 *     .onChange( function ( value ) {
+			 *   
+			 *       renderer.toneMappingExposure = value;
+			 *   
+			 *     } );
+			 *
+			 * 这些代码在做什么：
+			 * 1. toneMapping 决定高亮如何被压回屏幕范围。
+			 * 2. toneMappingExposure 是全局曝光，所有物体最终都会受影响。
+			 * 3. HDR 环境贴图让金属、玻璃、高光更真实，也更需要 tone mapping。
+			 * 4. None 不做映射，高亮容易截断，官网因此隐藏 exposure 控件。
+			 * 5. CustomToneMapping 演示了可以替换 shader chunk 自定义曲线。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 产品渲染调色
+			 * 2. HDR 场景曝光
+			 * 3. 夜景灯光控制
+			 * 4. 影视感画面
+			 * 5. PBR 最终观感统一
+			 *
+			 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_tonemapping.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+			import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+
+			let renderer, scene, camera, controls;
+			let gui, guiExposure = null;
+
+			const params = {
+				exposure: 1.0,
+				toneMapping: 'Neutral',
+				blurriness: 0.3,
+				intensity: 1.0,
+			};
+
+			const toneMappingOptions = {
+				None: THREE.NoToneMapping,
+				Linear: THREE.LinearToneMapping,
+				Reinhard: THREE.ReinhardToneMapping,
+				Cineon: THREE.CineonToneMapping,
+				ACESFilmic: THREE.ACESFilmicToneMapping,
+				AgX: THREE.AgXToneMapping,
+				Neutral: THREE.NeutralToneMapping,
+				Custom: THREE.CustomToneMapping
+			};
+
+			init().catch( function ( err ) {
+
+				console.error( err );
+
+			} );
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：toneMapping 决定高亮如何被压回屏幕范围。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				renderer.toneMapping = toneMappingOptions[ params.toneMapping ];
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：toneMappingExposure 是全局曝光，所有物体最终都会受影响。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				renderer.toneMappingExposure = params.exposure;
+
+				// Set CustomToneMapping to Uncharted2
+				// source: http://filmicworlds.com/blog/filmic-tonemapping-operators/
+
+				THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+
+					'vec3 CustomToneMapping( vec3 color ) { return color; }',
+
+					`#define Uncharted2Helper( x ) max( ( ( x * ( 0.15 * x + 0.10 * 0.50 ) + 0.20 * 0.02 ) / ( x * ( 0.15 * x + 0.50 ) + 0.20 * 0.30 ) ) - 0.02 / 0.30, vec3( 0.0 ) )
+
+					float toneMappingWhitePoint = 1.0;
+
+					vec3 CustomToneMapping( vec3 color ) {
+						color *= toneMappingExposure;
+						return saturate( Uncharted2Helper( color ) / Uncharted2Helper( vec3( toneMappingWhitePoint ) ) );
+
+					}`
+
+				);
+
+				scene = new THREE.Scene();
+				scene.backgroundBlurriness = params.blurriness;
+
+				const light = new THREE.DirectionalLight( 0xfff3ee, 3 ); // simulate sun
+				light.position.set( 1, 0.05, 0.7 );
+				scene.add( light );
+
+				// scene.add( new THREE.DirectionalLightHelper( light, 1, 0x000000 ) );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.01, 10 );
+				camera.position.set( - 0.02, 0.03, 0.05 );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.enablePan = false;
+				controls.enableDamping = true;
+				controls.minDistance = 0.03;
+				controls.maxDistance = 0.2;
+				controls.target.set( 0, 0.03, 0 );
+				controls.update();
+
+				const hdrLoader = new HDRLoader()
+					.setPath( 'textures/equirectangular/' );
+
+				const dracoLoader = new DRACOLoader();
+				dracoLoader.setDecoderPath( 'jsm/libs/draco/gltf/' );
+				const gltfLoader = new GLTFLoader();
+				gltfLoader.setDRACOLoader( dracoLoader );
+				gltfLoader.setPath( 'models/gltf/' );
+
+				const [ texture, gltf ] = await Promise.all( [
+					hdrLoader.loadAsync( 'venice_sunset_1k.hdr' ),
+					gltfLoader.loadAsync( 'venice_mask.glb' ),
+				] );
+
+				// environment
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：HDR 环境贴图让金属、玻璃、高光更真实，也更需要 tone mapping。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				texture.mapping = THREE.EquirectangularReflectionMapping;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：None 不做映射，高亮容易截断，官网因此隐藏 exposure 控件。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.background = texture;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：CustomToneMapping 演示了可以替换 shader chunk 自定义曲线。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.environment = texture;
+
+				// model
+
+				scene.add( gltf.scene );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				//
+
+				gui = new GUI();
+				const toneMappingFolder = gui.addFolder( 'Tone Mapping' );
+
+				toneMappingFolder.add( params, 'toneMapping', Object.keys( toneMappingOptions ) )
+
+					.name( 'type' )
+					.onChange( function () {
+
+						updateGUI();
+
+						renderer.toneMapping = toneMappingOptions[ params.toneMapping ];
+
+					} );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：CustomToneMapping 演示了可以替换 shader chunk 自定义曲线。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				guiExposure = toneMappingFolder.add( params, 'exposure', 0, 2 )
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：CustomToneMapping 演示了可以替换 shader chunk 自定义曲线。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.onChange( function ( value ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：CustomToneMapping 演示了可以替换 shader chunk 自定义曲线。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						renderer.toneMappingExposure = value;
+
+					} );
+
+				const backgroundFolder = gui.addFolder( 'Background' );
+
+				backgroundFolder.add( params, 'blurriness', 0, 1 )
+
+					.onChange( function ( value ) {
+
+						scene.backgroundBlurriness = value;
+
+					} );
+
+				backgroundFolder.add( params, 'intensity', 0, 1 )
+
+					.onChange( function ( value ) {
+
+						scene.backgroundIntensity = value;
+
+					} );
+
+				updateGUI();
+
+				gui.open();
+
+			}
+
+			function updateGUI() {
+
+				if ( params.toneMapping === 'None' ) {
+
+					guiExposure.hide();
+
+				} else {
+
+					guiExposure.show();
+
+				}
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				controls.update();
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

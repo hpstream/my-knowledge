@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>three.js webgl - instancing - performance</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - instancing - performance">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_instancing_performance.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_instancing_performance.jpg">
+	<link type="text/css" rel="stylesheet" href="main.css">
+	<style>
+		#info {
+			background-color: rgba(0,0,0,0.75);
+		}
+
+		.lil-gui .gui-stats {
+			line-height: var(--widget-height);
+			padding: var(--padding);
+		}
+	</style>
+</head>
+<body>
+
+	<div id="info">
+
+		<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - instancing - performance
+
+	</div>
+
+	<div id="container"></div>
+
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "../build/three.module.js",
+				"three/addons/": "./jsm/"
+			}
+		}
+	</script>
+
+	<script type="module">
+		
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_instancing_performance.html
+			 * 分组：E｜性能大量对象和后处理
+			 * 目标：学习 InstancedMesh 如何用一次 draw call 绘制大量相同几何，并比较普通 Mesh、merged geometry 和 instancing 的差别。
+			 *
+			 * 阅读顺序：先找 InstancedMesh / Points / EffectComposer，再看每帧更新的数据量。性能类案例要重点区分 CPU 创建对象、GPU draw call、纹理/后处理成本。
+			 *
+			 * 核心知识点：
+			 * 1. InstancedMesh 共享 geometry/material
+			 * 2. 每个实例只有 matrix/color 等差异数据
+			 * 3. setMatrixAt 写入实例矩阵
+			 * 4. draw call 大幅减少
+			 * 5. 适合重复对象，不适合每个对象拓扑都不同的情况
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const mesh = new THREE.InstancedMesh( geometry, material, api.count );
+			 *   const matrix = new THREE.Matrix4();
+			 *   
+			 *   for ( let i = 0; i < api.count; i ++ ) {
+			 *     randomizeMatrix( matrix );
+			 *     mesh.setMatrixAt( i, matrix );
+			 *   }
+			 *   
+			 *   scene.add( mesh );
+			 *
+			 * 这些代码在做什么：
+			 * 1. InstancedMesh 的第三个参数是实例数量。
+			 * 2. 每个实例通过 matrix 表示自己的位置、旋转和缩放。
+			 * 3. 所有实例共用一份 geometry 和 material，因此 GPU 提交成本低。
+			 * 4. 如果每个对象材质完全不同，instancing 的收益会降低。
+			 * 5. 案例的重点是性能对比，不是视觉复杂度。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 森林、草地、石头
+			 * 2. 城市窗户/建筑重复件
+			 * 3. 货架商品
+			 * 4. 粒子化物体
+			 * 5. 大规模可视化点阵
+			 *
+			 * 对应讲解文档：../官方案例讲解/E-性能大量对象后处理/webgl_instancing_performance.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+		import Stats from 'three/addons/libs/stats.module.js';
+		import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+		let container, stats, gui, guiStatsEl;
+		let camera, controls, scene, renderer, material;
+
+		// gui
+
+		const Method = {
+			INSTANCED: 'INSTANCED',
+			MERGED: 'MERGED',
+			NAIVE: 'NAIVE'
+		};
+
+		const api = {
+			method: Method.INSTANCED,
+			count: 1000
+		};
+
+		//
+
+		init();
+		initMesh();
+
+		//
+
+		function clean() {
+
+			const meshes = [];
+
+			scene.traverse( function ( object ) {
+
+				if ( object.isMesh ) meshes.push( object );
+
+			} );
+
+			for ( let i = 0; i < meshes.length; i ++ ) {
+
+				const mesh = meshes[ i ];
+				mesh.material.dispose();
+				mesh.geometry.dispose();
+
+				scene.remove( mesh );
+
+			}
+
+		}
+
+		const randomizeMatrix = function () {
+
+			const position = new THREE.Vector3();
+			const quaternion = new THREE.Quaternion();
+			const scale = new THREE.Vector3();
+
+			return function ( matrix ) {
+
+				position.x = Math.random() * 40 - 20;
+				position.y = Math.random() * 40 - 20;
+				position.z = Math.random() * 40 - 20;
+
+				quaternion.random();
+
+				scale.x = scale.y = scale.z = Math.random() * 1;
+
+				matrix.compose( position, quaternion, scale );
+
+			};
+
+		}();
+
+		function initMesh() {
+
+			clean();
+
+			// make instances
+			new THREE.BufferGeometryLoader()
+				.setPath( 'models/json/' )
+				.load( 'suzanne_buffergeometry.json', function ( geometry ) {
+
+					material = new THREE.MeshNormalMaterial();
+
+					geometry.computeVertexNormals();
+
+					console.time( api.method + ' (build)' );
+
+					switch ( api.method ) {
+
+						case Method.INSTANCED:
+							makeInstanced( geometry );
+							break;
+
+						case Method.MERGED:
+							makeMerged( geometry );
+							break;
+
+						case Method.NAIVE:
+							makeNaive( geometry );
+							break;
+
+					}
+
+					console.timeEnd( api.method + ' (build)' );
+
+				} );
+
+		}
+
+		function makeInstanced( geometry ) {
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：每个实例通过 matrix 表示自己的位置、旋转和缩放。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			const matrix = new THREE.Matrix4();
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：InstancedMesh 的第三个参数是实例数量。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			const mesh = new THREE.InstancedMesh( geometry, material, api.count );
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：所有实例共用一份 geometry 和 material，因此 GPU 提交成本低。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			for ( let i = 0; i < api.count; i ++ ) {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：如果每个对象材质完全不同，instancing 的收益会降低。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				randomizeMatrix( matrix );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：案例的重点是性能对比，不是视觉复杂度。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				mesh.setMatrixAt( i, matrix );
+
+			}
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：案例的重点是性能对比，不是视觉复杂度。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			scene.add( mesh );
+
+			//
+
+			const geometryByteLength = getGeometryByteLength( geometry );
+
+			guiStatsEl.innerHTML = [
+
+				'<i>GPU draw calls</i>: 1',
+				'<i>GPU memory</i>: ' + formatBytes( api.count * 16 + geometryByteLength, 2 )
+
+			].join( '<br/>' );
+
+		}
+
+		function makeMerged( geometry ) {
+
+			const geometries = [];
+			const matrix = new THREE.Matrix4();
+
+			for ( let i = 0; i < api.count; i ++ ) {
+
+				randomizeMatrix( matrix );
+
+				const instanceGeometry = geometry.clone();
+				instanceGeometry.applyMatrix4( matrix );
+
+				geometries.push( instanceGeometry );
+
+			}
+
+			const mergedGeometry = BufferGeometryUtils.mergeGeometries( geometries );
+
+			scene.add( new THREE.Mesh( mergedGeometry, material ) );
+
+			//
+
+			guiStatsEl.innerHTML = [
+
+				'<i>GPU draw calls</i>: 1',
+				'<i>GPU memory</i>: ' + formatBytes( getGeometryByteLength( mergedGeometry ), 2 )
+
+			].join( '<br/>' );
+
+		}
+
+		function makeNaive( geometry ) {
+
+			const matrix = new THREE.Matrix4();
+
+			for ( let i = 0; i < api.count; i ++ ) {
+
+				randomizeMatrix( matrix );
+
+				const mesh = new THREE.Mesh( geometry, material );
+				mesh.applyMatrix4( matrix );
+
+				scene.add( mesh );
+
+			}
+
+			//
+
+			const geometryByteLength = getGeometryByteLength( geometry );
+
+			guiStatsEl.innerHTML = [
+
+				'<i>GPU draw calls</i>: ' + api.count,
+				'<i>GPU memory</i>: ' + formatBytes( api.count * 16 + geometryByteLength, 2 )
+
+			].join( '<br/>' );
+
+		}
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+		function init() {
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			// camera
+
+			camera = new THREE.PerspectiveCamera( 70, width / height, 1, 100 );
+			camera.position.z = 30;
+
+			// renderer
+
+			renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( width, height );
+			renderer.setAnimationLoop( animate );
+			container = document.getElementById( 'container' );
+			container.appendChild( renderer.domElement );
+
+			// scene
+
+			scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0xffffff );
+
+			// controls
+
+			controls = new OrbitControls( camera, renderer.domElement );
+			controls.autoRotate = true;
+
+			// stats
+
+			stats = new Stats();
+			container.appendChild( stats.dom );
+
+			// gui
+
+			gui = new GUI();
+			gui.add( api, 'method', Method ).onChange( initMesh );
+			gui.add( api, 'count', 1, 10000 ).step( 1 ).onChange( initMesh );
+
+			const perfFolder = gui.addFolder( 'Performance' );
+
+			guiStatsEl = document.createElement( 'div' );
+			guiStatsEl.classList.add( 'gui-stats' );
+
+			perfFolder.$children.appendChild( guiStatsEl );
+			perfFolder.open();
+
+			// listeners
+
+			window.addEventListener( 'resize', onWindowResize );
+
+			Object.assign( window, { scene } );
+
+		}
+
+		//
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+		function onWindowResize() {
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize( width, height );
+
+		}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+		function animate() {
+
+			controls.update();
+
+			renderer.render( scene, camera );
+
+			stats.update();
+
+		}
+
+		//
+
+		function getGeometryByteLength( geometry ) {
+
+			let total = 0;
+
+			if ( geometry.index ) total += geometry.index.array.byteLength;
+
+			for ( const name in geometry.attributes ) {
+
+				total += geometry.attributes[ name ].array.byteLength;
+
+			}
+
+			return total;
+
+		}
+
+		// Source: https://stackoverflow.com/a/18650828/1314762
+		function formatBytes( bytes, decimals ) {
+
+			if ( bytes === 0 ) return '0 bytes';
+
+			const k = 1024;
+			const dm = decimals < 0 ? 0 : decimals;
+			const sizes = [ 'bytes', 'KB', 'MB' ];
+
+			const i = Math.floor( Math.log( bytes ) / Math.log( k ) );
+
+			return parseFloat( ( bytes / Math.pow( k, i ) ).toFixed( dm ) ) + ' ' + sizes[ i ];
+
+		}
+
+	</script>
+
+</body>
+</html>

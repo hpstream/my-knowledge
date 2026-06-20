@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - GLTFloader + compressed</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - GLTFloader + compressed">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_loader_gltf_compressed.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_loader_gltf_compressed.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - GLTFLoader + compression extensions<br />
+			<a href="https://sketchfab.com/3d-models/coffeemat-7fb196a40a6e4697aad9ca2f75c8b33d" target="_blank" rel="noopener">Coffeemat</a> by
+			<a href="https://sketchfab.com/OFFcours1" target="_blank" rel="noopener">Roman Red</a>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_loader_gltf_compressed.html
+			 * 分组：C｜模型资产和动画
+			 * 目标：学习现代 glTF 资产如何同时使用网格压缩和纹理压缩，减少下载体积并保持运行效果。
+			 *
+			 * 阅读顺序：先找 loader 和模型路径，再看解码器/压缩纹理/环境贴图，最后看 AnimationMixer 或模型后处理。模型资产类案例要重点理解“资源怎么进来、进来后如何适配场景”。
+			 *
+			 * 核心知识点：
+			 * 1. GLTFLoader
+			 * 2. KTX2Loader
+			 * 3. MeshoptDecoder
+			 * 4. KHR_texture_basisu
+			 * 5. EXT_meshopt_compression
+			 * 6. 压缩资产流水线
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const ktx2Loader = new KTX2Loader()
+			 *     .detectSupport( renderer );
+			 *   
+			 *   loader.setKTX2Loader( ktx2Loader );
+			 *   loader.setMeshoptDecoder( MeshoptDecoder );
+			 *   loader.load( 'coffeemat.glb', function ( gltf ) {
+			 *     scene.add( gltf.scene );
+			 *   } );
+			 *
+			 * 这些代码在做什么：
+			 * 1. glTF 模型可以很大，通常瓶颈不是代码，而是模型和贴图下载。
+			 * 2. KTX2Loader 负责 Basis Universal/KTX2 纹理转码，让纹理在不同 GPU 上使用合适压缩格式。
+			 * 3. MeshoptDecoder 负责解码 meshopt 网格压缩，减少顶点和索引数据体积。
+			 * 4. detectSupport(renderer) 会根据当前设备能力选择合适的纹理转码目标。
+			 * 5. loader.setKTX2Loader 和 setMeshoptDecoder 是告诉 GLTFLoader：遇到对应扩展时该交给谁解码。
+			 * 6. 这个案例适合学习“上线模型”而不是“本地随便加载模型”的资产处理方式。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做线上模型查看器
+			 * 2. 做电商 3D 商品展示
+			 * 3. 做移动端三维场景
+			 * 4. 做数字孪生的大模型加载优化
+			 * 5. 建立 gltfpack/ktx2 的资产压缩流水线
+			 *
+			 * 对应讲解文档：../官方案例讲解/C-模型资产动画/webgl_loader_gltf_compressed.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+			import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+			import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+			let camera, scene, renderer;
+
+			init();
+			render();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				const container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 1;
+				container.appendChild( renderer.domElement );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.set( 0, 100, 0 );
+
+				const environment = new RoomEnvironment();
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xbbbbbb );
+				scene.environment = pmremGenerator.fromScene( environment, 0.04 ).texture;
+				environment.dispose();
+
+				const grid = new THREE.GridHelper( 500, 10, 0xffffff, 0xffffff );
+				grid.material.opacity = 0.5;
+				grid.material.depthWrite = false;
+				grid.material.transparent = true;
+				scene.add( grid );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：glTF 模型可以很大，通常瓶颈不是代码，而是模型和贴图下载。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const ktx2Loader = new KTX2Loader()
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：KTX2Loader 负责 Basis Universal/KTX2 纹理转码，让纹理在不同 GPU 上使用合适压缩格式。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.detectSupport( renderer );
+
+				const loader = new GLTFLoader().setPath( 'models/gltf/' );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：MeshoptDecoder 负责解码 meshopt 网格压缩，减少顶点和索引数据体积。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				loader.setKTX2Loader( ktx2Loader );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：detectSupport(renderer) 会根据当前设备能力选择合适的纹理转码目标。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				loader.setMeshoptDecoder( MeshoptDecoder );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：loader.setKTX2Loader 和 setMeshoptDecoder 是告诉 GLTFLoader：遇到对应扩展时该交给谁解码。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				loader.load( 'coffeemat.glb', function ( gltf ) {
+
+					// coffeemat.glb was produced from the source scene using gltfpack:
+					// gltfpack -i coffeemat/scene.gltf -o coffeemat.glb -cc -tc
+					// The resulting model uses EXT_meshopt_compression (for geometry) and KHR_texture_basisu (for texture compression using ETC1S/BasisLZ)
+
+					gltf.scene.position.y = 8;
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：这个案例适合学习“上线模型”而不是“本地随便加载模型”的资产处理方式。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					scene.add( gltf.scene );
+
+					render();
+
+				} );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.addEventListener( 'change', render ); // use if there is no animation loop
+				controls.minDistance = 400;
+				controls.maxDistance = 1000;
+				controls.target.set( 10, 90, - 16 );
+				controls.update();
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				render();
+
+			}
+
+			//
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - interactive cubes</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - interactive cubes">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_interactive_cubes.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_interactive_cubes.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #f0f0f0;
+				color: #444;
+			}
+			a {
+				color: #08f;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - interactive cubes
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_interactive_cubes.html
+			 * 分组：D｜交互编辑
+			 * 目标：学习屏幕坐标如何转成 NDC，再用 Raycaster 从相机发出射线命中 3D 对象。
+			 *
+			 * 阅读顺序：先找事件监听和 Raycaster / Controls，再看命中结果如何改变对象。交互编辑类案例要重点理解“屏幕坐标如何变成 3D 操作”。
+			 *
+			 * 核心知识点：
+			 * 1. pointer 坐标必须归一化到 -1 到 1
+			 * 2. raycaster.setFromCamera 使用相机生成射线
+			 * 3. intersectObjects 返回按距离排序的命中列表
+			 * 4. 只取 intersects[0] 表示最近对象
+			 * 5. 用 emissive 改色做 hover 高亮
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			 *   pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+			 *   
+			 *   raycaster.setFromCamera( pointer, camera );
+			 *   const intersects = raycaster.intersectObjects( scene.children, false );
+			 *   
+			 *   if ( intersects.length > 0 ) {
+			 *     INTERSECTED = intersects[ 0 ].object;
+			 *     INTERSECTED.material.emissive.setHex( 0xff0000 );
+			 *   }
+			 *
+			 * 这些代码在做什么：
+			 * 1. 浏览器鼠标坐标左上角是 0,0；WebGL 拾取需要 NDC，中心是 0,0，范围是 -1 到 1。
+			 * 2. y 轴要取负，因为浏览器 y 向下，NDC y 向上。
+			 * 3. intersectObjects 第二个参数 false 表示不递归子节点。
+			 * 4. 命中列表按离相机近到远排序，通常第一个就是用户看到的最前对象。
+			 * 5. 案例只做 hover，如果要 click，应该在 pointerdown/click 事件里复用同样的 raycaster 逻辑。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 点击选择模型
+			 * 2. 悬停高亮
+			 * 3. 3D 菜单/热点
+			 * 4. 编辑器选中对象
+			 * 5. 游戏拾取和瞄准
+			 *
+			 * 对应讲解文档：../官方案例讲解/D-交互编辑/webgl_interactive_cubes.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let stats;
+			let camera, scene, raycaster, renderer;
+
+			let INTERSECTED;
+			let theta = 0;
+
+			const pointer = new THREE.Vector2();
+			const radius = 5;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xf0f0f0 );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 3 );
+				light.position.set( 1, 1, 1 ).normalize();
+				scene.add( light );
+
+				const geometry = new THREE.BoxGeometry();
+
+				for ( let i = 0; i < 2000; i ++ ) {
+
+					const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
+
+					object.position.x = Math.random() * 40 - 20;
+					object.position.y = Math.random() * 40 - 20;
+					object.position.z = Math.random() * 40 - 20;
+
+					object.rotation.x = Math.random() * 2 * Math.PI;
+					object.rotation.y = Math.random() * 2 * Math.PI;
+					object.rotation.z = Math.random() * 2 * Math.PI;
+
+					object.scale.x = Math.random() + 0.5;
+					object.scale.y = Math.random() + 0.5;
+					object.scale.z = Math.random() + 0.5;
+
+					scene.add( object );
+
+				}
+
+				raycaster = new THREE.Raycaster();
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				document.addEventListener( 'mousemove', onPointerMove );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onPointerMove( event ) {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：浏览器鼠标坐标左上角是 0,0；WebGL 拾取需要 NDC，中心是 0,0，范围是 -1 到 1。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：y 轴要取负，因为浏览器 y 向下，NDC y 向上。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+			}
+
+			//
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				render();
+				stats.update();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				theta += 0.1;
+
+				camera.position.x = radius * Math.sin( THREE.MathUtils.degToRad( theta ) );
+				camera.position.y = radius * Math.sin( THREE.MathUtils.degToRad( theta ) );
+				camera.position.z = radius * Math.cos( THREE.MathUtils.degToRad( theta ) );
+				camera.lookAt( scene.position );
+
+				camera.updateMatrixWorld();
+
+				// find intersections
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：intersectObjects 第二个参数 false 表示不递归子节点。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				raycaster.setFromCamera( pointer, camera );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：命中列表按离相机近到远排序，通常第一个就是用户看到的最前对象。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const intersects = raycaster.intersectObjects( scene.children, false );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：案例只做 hover，如果要 click，应该在 pointerdown/click 事件里复用同样的 raycaster 逻辑。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				if ( intersects.length > 0 ) {
+
+					if ( INTERSECTED != intersects[ 0 ].object ) {
+
+						if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：案例只做 hover，如果要 click，应该在 pointerdown/click 事件里复用同样的 raycaster 逻辑。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						INTERSECTED = intersects[ 0 ].object;
+						INTERSECTED.currentHex = INTERSECTED.material.emissive.getHex();
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：案例只做 hover，如果要 click，应该在 pointerdown/click 事件里复用同样的 raycaster 逻辑。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						INTERSECTED.material.emissive.setHex( 0xff0000 );
+
+					}
+
+				} else {
+
+					if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+
+					INTERSECTED = null;
+
+				}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

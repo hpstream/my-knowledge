@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - drag controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - drag controls">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/misc_controls_drag.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/misc_controls_drag.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #f0f0f0;
+				color: #444;
+			}
+			a {
+				color: #08f;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - drag controls<br />
+			Use "Shift+Click" to add/remove objects to/from a group.<br />
+			Use "M" to toggle between rotate and pan mode (touch only).<br />
+			Grouped objects can be transformed as a union.
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：misc_controls_drag.html
+			 * 分组：D｜交互编辑
+			 * 目标：学习如何让鼠标拖动物体，并理解拖拽控制和 OrbitControls 为什么需要互斥。
+			 *
+			 * 阅读顺序：先找事件监听和 Raycaster / Controls，再看命中结果如何改变对象。交互编辑类案例要重点理解“屏幕坐标如何变成 3D 操作”。
+			 *
+			 * 核心知识点：
+			 * 1. DragControls 接收可拖拽物体数组
+			 * 2. dragstart 时通常关闭 OrbitControls
+			 * 3. dragend 时恢复 OrbitControls
+			 * 4. 拖拽发生在相机视角相关平面上
+			 * 5. 适合简单物体摆放，不等于完整编辑器 gizmo
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   controls = new DragControls( [ ... objects ], camera, renderer.domElement );
+			 *   controls.rotateSpeed = 2;
+			 *   controls.addEventListener( 'drag', render );
+			 *   document.addEventListener( 'click', onClick );
+			 *   window.addEventListener( 'keydown', onKeyDown );
+			 *   window.addEventListener( 'keyup', onKeyUp );
+			 *
+			 * 这些代码在做什么：
+			 * 1. objects 是允许拖拽的对象列表，不在列表里的物体不会响应。
+			 * 2. 拖拽时如果 OrbitControls 仍然启用，鼠标移动会同时拖物体和转相机，交互会冲突。
+			 * 3. DragControls 更适合自由拖动物体，不负责精确轴向移动。
+			 * 4. 如果要像 Blender/编辑器那样按轴移动，需要 TransformControls。
+			 * 5. 拖拽后对象 position 已经改变，可以持久化到你的业务数据。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 简单搭建器
+			 * 2. 室内家具摆放
+			 * 3. 教学拖动物体
+			 * 4. 2.5D 编辑工具
+			 * 5. 关卡原型编辑
+			 *
+			 * 对应讲解文档：../官方案例讲解/D-交互编辑/misc_controls_drag.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { DragControls } from 'three/addons/controls/DragControls.js';
+
+			let container;
+			let camera, scene, renderer;
+			let controls, group;
+			let enableSelection = false;
+
+			const objects = [];
+
+			const mouse = new THREE.Vector2(), raycaster = new THREE.Raycaster();
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 500 );
+				camera.position.z = 25;
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xf0f0f0 );
+
+				scene.add( new THREE.AmbientLight( 0xaaaaaa ) );
+
+				const light = new THREE.SpotLight( 0xffffff, 10000 );
+				light.position.set( 0, 25, 50 );
+				light.angle = Math.PI / 9;
+
+				light.castShadow = true;
+				light.shadow.camera.near = 10;
+				light.shadow.camera.far = 100;
+				light.shadow.mapSize.width = 1024;
+				light.shadow.mapSize.height = 1024;
+
+				scene.add( light );
+
+				group = new THREE.Group();
+				scene.add( group );
+
+				const geometry = new THREE.BoxGeometry();
+
+				for ( let i = 0; i < 200; i ++ ) {
+
+					const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
+
+					object.position.x = Math.random() * 30 - 15;
+					object.position.y = Math.random() * 15 - 7.5;
+					object.position.z = Math.random() * 20 - 10;
+
+					object.rotation.x = Math.random() * 2 * Math.PI;
+					object.rotation.y = Math.random() * 2 * Math.PI;
+					object.rotation.z = Math.random() * 2 * Math.PI;
+
+					object.scale.x = Math.random() * 2 + 1;
+					object.scale.y = Math.random() * 2 + 1;
+					object.scale.z = Math.random() * 2 + 1;
+
+					object.castShadow = true;
+					object.receiveShadow = true;
+
+					scene.add( object );
+
+					objects.push( object );
+
+				}
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				renderer.shadowMap.type = THREE.PCFShadowMap;
+
+				container.appendChild( renderer.domElement );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：objects 是允许拖拽的对象列表，不在列表里的物体不会响应。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls = new DragControls( [ ... objects ], camera, renderer.domElement );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：拖拽时如果 OrbitControls 仍然启用，鼠标移动会同时拖物体和转相机，交互会冲突。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.rotateSpeed = 2;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：DragControls 更适合自由拖动物体，不负责精确轴向移动。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.addEventListener( 'drag', render );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：如果要像 Blender/编辑器那样按轴移动，需要 TransformControls。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				document.addEventListener( 'click', onClick );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：拖拽后对象 position 已经改变，可以持久化到你的业务数据。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				window.addEventListener( 'keydown', onKeyDown );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：拖拽后对象 position 已经改变，可以持久化到你的业务数据。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				window.addEventListener( 'keyup', onKeyUp );
+
+				render();
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				render();
+
+			}
+
+			function onKeyDown( event ) {
+
+				enableSelection = ( event.keyCode === 16 ) ? true : false;
+			
+				if ( event.keyCode === 77 ) {
+
+					controls.touches.ONE = ( controls.touches.ONE === THREE.TOUCH.PAN ) ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN;
+			
+				}
+
+			}
+
+			function onKeyUp() {
+
+				enableSelection = false;
+
+			}
+
+			function onClick( event ) {
+
+				event.preventDefault();
+
+				if ( enableSelection === true ) {
+
+					const draggableObjects = controls.objects;
+					draggableObjects.length = 0;
+
+					mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+					mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+					raycaster.setFromCamera( mouse, camera );
+
+					const intersections = raycaster.intersectObjects( objects, true );
+
+					if ( intersections.length > 0 ) {
+
+						const object = intersections[ 0 ].object;
+
+						if ( group.children.includes( object ) === true ) {
+
+							object.material.emissive.set( 0x000000 );
+							scene.attach( object );
+
+						} else {
+
+							object.material.emissive.set( 0xaaaaaa );
+							group.attach( object );
+
+						}
+
+						controls.transformGroup = true;
+						draggableObjects.push( group );
+
+					}
+
+					if ( group.children.length === 0 ) {
+
+						controls.transformGroup = false;
+						draggableObjects.push( ...objects );
+
+					}
+
+				}
+
+				render();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

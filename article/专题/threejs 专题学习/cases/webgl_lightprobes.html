@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - light probe volume</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - light probe volume">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_lightprobes.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_lightprobes.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - light probe volume<br/>
+			Position-dependent diffuse global illumination via L2 SH probe grid
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_lightprobes.html
+			 * 分组：B｜光照材质
+			 * 目标：理解单个 LightProbe 只代表一个位置；多个 probe 排成网格后，就像在房间里多个位置都测了一圈环境亮度，让移动物体能获得不同区域的环境补光。
+			 *
+			 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+			 *
+			 * 核心知识点：
+			 * 1. 单个 probe 只能描述一个点位的环境
+			 * 2. LightProbeGrid 是一组按网格排列的探针
+			 * 3. bake 会在每个探针位置采样周围场景
+			 * 4. 物体移动时可以在多个探针之间插值
+			 * 5. 仍然不会产生动态阴影
+			 * 6. 适合大场景分区补光
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   probes = new LightProbeGrid( 5.6, 4.7, 5.6, resolution, resolution, resolution );
+			 *   probes.position.set( 0, 2.45, 0 );
+			 *   probes.bake( renderer, scene, { cubemapSize: 32, near: 0.05, far: 20 } );
+			 *   probes.visible = params.enabled;
+			 *   scene.add( probes );
+			 *   
+			 *   probesHelper = new LightProbeGridHelper( probes );
+			 *
+			 * 这些代码在做什么：
+			 * 1. LightProbeGrid 创建的是一组三维网格里的 probe，不是单独一盏灯。
+			 * 2. 5.6、4.7、5.6 是这组 probe 覆盖的空间范围，可以理解成要测量的房间大小。
+			 * 3. resolution 决定每个方向放多少个 probe；数量越多，空间变化越细，但烘焙和数据成本越高。
+			 * 4. bake 会让 renderer 在每个 probe 点位向周围采样，把周围环境压缩成这个点位的补光数据。
+			 * 5. LightProbeGridHelper 只是把这些采样点显示出来，方便你知道 probe 放在哪里。
+			 * 6. 这个案例解决的是“物体走到不同区域，环境补光也跟着变化”，不是动态阴影，也不是镜面反射。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 大型室内场景
+			 * 2. 游戏关卡环境光
+			 * 3. AR/VR 空间光照
+			 * 4. 角色移动补光
+			 * 5. 烘焙光照系统
+			 *
+			 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_lightprobes.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { LightProbeGrid } from 'three/addons/lighting/LightProbeGrid.js';
+			import { LightProbeGridHelper } from 'three/addons/helpers/LightProbeGridHelper.js';
+
+			let camera, scene, renderer, controls;
+			let probes, probesHelper;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				// Camera
+
+				camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 2.5, 8 );
+
+				// Scene
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x111111 );
+
+				// Cornell box
+
+				const wallMaterial = new THREE.MeshStandardMaterial( { color: 0xcccccc } );
+				const redMaterial = new THREE.MeshStandardMaterial( { color: 0xff0000 } );
+				const greenMaterial = new THREE.MeshStandardMaterial( { color: 0x00ff00 } );
+
+				// Floor
+				const floor = new THREE.Mesh( new THREE.PlaneGeometry( 6, 6 ), wallMaterial );
+				floor.rotation.x = - Math.PI / 2;
+				floor.receiveShadow = true;
+				scene.add( floor );
+
+				// Ceiling
+				const ceiling = new THREE.Mesh( new THREE.PlaneGeometry( 6, 6 ), wallMaterial );
+				ceiling.rotation.x = Math.PI / 2;
+				ceiling.position.y = 5;
+				ceiling.receiveShadow = true;
+				scene.add( ceiling );
+
+				// Back wall
+				const backWall = new THREE.Mesh( new THREE.PlaneGeometry( 6, 5 ), wallMaterial );
+				backWall.position.set( 0, 2.5, - 3 );
+				backWall.receiveShadow = true;
+				scene.add( backWall );
+
+				// Front wall
+				const frontWall = new THREE.Mesh( new THREE.PlaneGeometry( 6, 5 ), wallMaterial );
+				frontWall.rotation.y = Math.PI;
+				frontWall.position.set( 0, 2.5, 3 );
+				frontWall.receiveShadow = true;
+				scene.add( frontWall );
+
+				// Left wall (red)
+				const leftWall = new THREE.Mesh( new THREE.PlaneGeometry( 6, 5 ), redMaterial );
+				leftWall.rotation.y = Math.PI / 2;
+				leftWall.position.set( - 3, 2.5, 0 );
+				leftWall.receiveShadow = true;
+				scene.add( leftWall );
+
+				// Right wall (green)
+				const rightWall = new THREE.Mesh( new THREE.PlaneGeometry( 6, 5 ), greenMaterial );
+				rightWall.rotation.y = - Math.PI / 2;
+				rightWall.position.set( 3, 2.5, 0 );
+				rightWall.receiveShadow = true;
+				scene.add( rightWall );
+
+				// Objects inside the box
+
+				const objectMaterial = new THREE.MeshStandardMaterial( { color: 0xeeeeee } );
+
+				// Tall box
+				const tallBox = new THREE.Mesh( new THREE.BoxGeometry( 1.2, 2.5, 1.2 ), objectMaterial );
+				tallBox.position.set( - 0.8, 1.25, - 0.8 );
+				tallBox.rotation.y = Math.PI / 8;
+				tallBox.castShadow = true;
+				tallBox.receiveShadow = true;
+				scene.add( tallBox );
+
+				// Short box
+				const shortBox = new THREE.Mesh( new THREE.BoxGeometry( 1.2, 1.2, 1.2 ), objectMaterial );
+				shortBox.position.set( 1, 0.6, 0.5 );
+				shortBox.rotation.y = - Math.PI / 6;
+				shortBox.castShadow = true;
+				shortBox.receiveShadow = true;
+				scene.add( shortBox );
+
+				// Sphere (to show smooth GI variation)
+				const sphere = new THREE.Mesh( new THREE.SphereGeometry( 0.5, 32, 32 ), objectMaterial.clone() );
+				sphere.position.set( 1, 1.9, 0.5 );
+				sphere.castShadow = true;
+				sphere.receiveShadow = true;
+				scene.add( sphere );
+
+				// Light
+				const light = new THREE.PointLight( 0xffffff, 40 );
+				light.position.set( 0, 4.5, 0 );
+				light.castShadow = true;
+				light.shadow.mapSize.setScalar( 256 );
+				light.shadow.radius = 10;
+				light.shadow.normalBias = - 0.02;
+				scene.add( light );
+
+				// Dim ambient to see GI effect better
+				const ambient = new THREE.AmbientLight( 0xffffff, 0.05 );
+				scene.add( ambient );
+
+				// Renderer
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.shadowMap.enabled = true;
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 1.0;
+				document.body.appendChild( renderer.domElement );
+
+				// Controls
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.target.set( 0, 2.5, 0 );
+				controls.update();
+
+				// Bake light probe volume
+
+				async function bakeWithResolution( resolution ) {
+
+					if ( probes ) {
+
+						scene.remove( probes );
+						probes.dispose();
+
+					}
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：LightProbeGrid 创建的是一组三维网格里的 probe，不是单独一盏灯。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					probes = new LightProbeGrid( 5.6, 4.7, 5.6, resolution, resolution, resolution );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：5.6、4.7、5.6 是这组 probe 覆盖的空间范围，可以理解成要测量的房间大小。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					probes.position.set( 0, 2.45, 0 );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：resolution 决定每个方向放多少个 probe；数量越多，空间变化越细，但烘焙和数据成本越高。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					probes.bake( renderer, scene, { cubemapSize: 32, near: 0.05, far: 20 } );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：bake 会让 renderer 在每个 probe 点位向周围采样，把周围环境压缩成这个点位的补光数据。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					probes.visible = params.enabled;
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：LightProbeGridHelper 只是把这些采样点显示出来，方便你知道 probe 放在哪里。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					scene.add( probes );
+
+					// Update debug visualization
+
+					if ( ! probesHelper ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：这个案例解决的是“物体走到不同区域，环境补光也跟着变化”，不是动态阴影，也不是镜面反射。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						probesHelper = new LightProbeGridHelper( probes );
+						probesHelper.visible = params.showProbes;
+						scene.add( probesHelper );
+
+					} else {
+
+						probesHelper.probes = probes;
+						probesHelper.update();
+
+					}
+
+				}
+
+				const params = {
+					enabled: true,
+					showProbes: true,
+					resolution: 6
+				};
+
+				await bakeWithResolution( params.resolution );
+
+				// GUI
+
+				const gui = new GUI();
+				gui.add( params, 'enabled' ).name( '补光 LightProbeGrid' ).onChange( ( value ) => {
+
+					probes.visible = value;
+
+				} );
+				gui.add( params, 'resolution', 2, 12, 1 ).name( 'Resolution' ).onFinishChange( ( value ) => {
+
+					bakeWithResolution( value );
+
+				} );
+				gui.add( params, 'showProbes' ).name( 'Show Probes' ).onChange( ( value ) => {
+
+					probesHelper.visible = value;
+
+				} );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>

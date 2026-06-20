@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - materials - environment maps</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - materials - environment maps">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_materials_envmaps.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_materials_envmaps.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - webgl environment mapping example<br/>
+			Equirectangular Map by <a href="http://www.flickr.com/photos/jonragnarsson/2294472375/" target="_blank" rel="noopener">J&oacute;n Ragnarsson</a>.
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_materials_envmaps.html
+			 * 分组：B｜光照材质
+			 * 目标：学习环境贴图如何给物体提供反射和折射信息，并理解 mapping、CubeTexture、EquirectangularTexture 的区别。
+			 *
+			 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+			 *
+			 * 核心知识点：
+			 * 1. 环境贴图不是普通颜色贴图
+			 * 2. 反射材质会采样周围环境
+			 * 3. 折射需要不同 mapping
+			 * 4. scene.background 只是视觉背景
+			 * 5. material.envMap 或 scene.environment 影响材质
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const loader = new THREE.CubeTextureLoader();
+			 *   loader.setPath( 'textures/cube/Bridge2/' );
+			 *   
+			 *   textureCube = loader.load( [ 'posx.jpg', 'negx.jpg', 'posy.jpg', 'negy.jpg', 'posz.jpg', 'negz.jpg' ] );
+			 *   textureEquirec.mapping = THREE.EquirectangularReflectionMapping;
+			 *   scene.background = textureCube;
+			 *   sphereMaterial = new THREE.MeshBasicMaterial( { envMap: textureCube } );
+			 *
+			 * 这些代码在做什么：
+			 * 1. EquirectangularReflectionMapping 表示这是一张经纬度环境图，用于反射采样。
+			 * 2. envMap 不贴在物体表面，而是根据视线和法线方向采样环境。
+			 * 3. reflectivity 控制反射混合强度。
+			 * 4. 普通 envmap 可以做反射演示，但 PBR 写实材质通常要看 HDR + PMREM。
+			 * 5. background 显示环境图，不代表所有材质都自动使用它。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 金属反射
+			 * 2. 玻璃折射
+			 * 3. 天空盒
+			 * 4. 产品环境反射
+			 * 5. 材质预览器
+			 *
+			 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_materials_envmaps.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+			let controls, camera, scene, renderer;
+			let textureEquirec, textureCube;
+			let sphereMesh, sphereMaterial, params;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				// CAMERAS
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 0, 2.5 );
+
+				// SCENE
+
+				scene = new THREE.Scene();
+
+				// Textures
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：EquirectangularReflectionMapping 表示这是一张经纬度环境图，用于反射采样。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const loader = new THREE.CubeTextureLoader();
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：envMap 不贴在物体表面，而是根据视线和法线方向采样环境。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				loader.setPath( 'textures/cube/Bridge2/' );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：reflectivity 控制反射混合强度。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				textureCube = loader.load( [ 'posx.jpg', 'negx.jpg', 'posy.jpg', 'negy.jpg', 'posz.jpg', 'negz.jpg' ] );
+
+				const textureLoader = new THREE.TextureLoader();
+
+				textureEquirec = textureLoader.load( 'textures/2294472375_24a3b8ef46_o.jpg' );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：普通 envmap 可以做反射演示，但 PBR 写实材质通常要看 HDR + PMREM。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				textureEquirec.mapping = THREE.EquirectangularReflectionMapping;
+				textureEquirec.colorSpace = THREE.SRGBColorSpace;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：background 显示环境图，不代表所有材质都自动使用它。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.background = textureCube;
+
+				//
+
+				const geometry = new THREE.IcosahedronGeometry( 1, 15 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：background 显示环境图，不代表所有材质都自动使用它。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				sphereMaterial = new THREE.MeshBasicMaterial( { envMap: textureCube } );
+				sphereMesh = new THREE.Mesh( geometry, sphereMaterial );
+				scene.add( sphereMesh );
+
+				//
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				//
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.minDistance = 1.5;
+				controls.maxDistance = 6;
+
+				//
+
+				params = {
+					Cube: function () {
+
+						scene.background = textureCube;
+
+						sphereMaterial.envMap = textureCube;
+						sphereMaterial.needsUpdate = true;
+
+					},
+					Equirectangular: function () {
+
+						scene.background = textureEquirec;
+
+						sphereMaterial.envMap = textureEquirec;
+						sphereMaterial.needsUpdate = true;
+
+					},
+					Refraction: false,
+					backgroundRotationX: false,
+					backgroundRotationY: false,
+					backgroundRotationZ: false,
+					syncMaterial: false
+				};
+
+				const gui = new GUI( { width: 300 } );
+				gui.add( params, 'Cube' );
+				gui.add( params, 'Equirectangular' );
+				gui.add( params, 'Refraction' ).onChange( function ( value ) {
+
+					if ( value ) {
+
+						textureEquirec.mapping = THREE.EquirectangularRefractionMapping;
+						textureCube.mapping = THREE.CubeRefractionMapping;
+
+					} else {
+
+						textureEquirec.mapping = THREE.EquirectangularReflectionMapping;
+						textureCube.mapping = THREE.CubeReflectionMapping;
+
+					}
+
+					sphereMaterial.needsUpdate = true;
+
+				} );
+				gui.add( params, 'backgroundRotationX' );
+				gui.add( params, 'backgroundRotationY' );
+				gui.add( params, 'backgroundRotationZ' );
+				gui.add( params, 'syncMaterial' );
+				gui.open();
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			//
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				if ( params.backgroundRotationX ) {
+
+					scene.backgroundRotation.x += 0.001;
+
+				}
+
+				if ( params.backgroundRotationY ) {
+
+					scene.backgroundRotation.y += 0.001;
+
+				}
+
+				if ( params.backgroundRotationZ ) {
+
+					scene.backgroundRotation.z += 0.001;
+
+				}
+
+				if ( params.syncMaterial ) {
+
+					sphereMesh.material.envMapRotation.copy( scene.backgroundRotation );
+
+				}
+
+				camera.lookAt( scene.position );
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

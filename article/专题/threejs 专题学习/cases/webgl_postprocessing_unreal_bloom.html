@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - postprocessing - unreal bloom</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - postprocessing - unreal bloom">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_postprocessing_unreal_bloom.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_postprocessing_unreal_bloom.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+		#info > * {
+			max-width: 650px;
+			margin-left: auto;
+			margin-right: auto;
+		}
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - Bloom pass by <a href="http://eduperiment.com" target="_blank" rel="noopener">Prashant Sharma</a> and <a href="https://clara.io" target="_blank" rel="noopener">Ben Houston</a>
+			<br/>
+			Model: <a href="https://blog.sketchfab.com/art-spotlight-primary-ion-drive/" target="_blank" rel="noopener">Primary Ion Drive</a> by
+			<a href="http://mjmurdock.com/" target="_blank" rel="noopener">Mike Murdock</a>, CC Attribution.
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_postprocessing_unreal_bloom.html
+			 * 分组：E｜性能大量对象和后处理
+			 * 目标：学习 Bloom 如何让高亮区域在屏幕上向周围扩散，并区分它和真实照明的区别。
+			 *
+			 * 阅读顺序：先找 InstancedMesh / Points / EffectComposer，再看每帧更新的数据量。性能类案例要重点区分 CPU 创建对象、GPU draw call、纹理/后处理成本。
+			 *
+			 * 核心知识点：
+			 * 1. Bloom 是后处理光晕
+			 * 2. threshold 决定哪些亮度进入 bloom
+			 * 3. strength 决定光晕强度
+			 * 4. radius 决定扩散范围
+			 * 5. Bloom 不会照亮别人，也不会产生阴影
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const bloomPass = new UnrealBloomPass(
+			 *     new THREE.Vector2( window.innerWidth, window.innerHeight ),
+			 *     1.5,
+			 *     0.4,
+			 *     0.85
+			 *   );
+			 *   
+			 *   bloomPass.threshold = params.threshold;
+			 *   bloomPass.strength = params.strength;
+			 *   bloomPass.radius = params.radius;
+			 *
+			 * 这些代码在做什么：
+			 * 1. UnrealBloomPass 接收屏幕尺寸和初始 threshold/strength/radius。
+			 * 2. threshold 太低时普通亮面也会发光，画面会脏。
+			 * 3. strength 太高时光晕糊成一片。
+			 * 4. radius 控制扩散半径，不是灯光距离。
+			 * 5. 如果想让发光物体真的照亮周围，需要额外放 PointLight/SpotLight 或使用全局光照方案。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 霓虹灯
+			 * 2. 科幻能量核心
+			 * 3. 高亮选中状态
+			 * 4. 夜景灯牌
+			 * 5. 游戏技能特效
+			 *
+			 * 对应讲解文档：../官方案例讲解/E-性能大量对象后处理/webgl_postprocessing_unreal_bloom.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+			import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+			import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+			import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+			let camera, stats;
+			let composer, renderer, mixer, timer;
+
+			const params = {
+				threshold: 0,
+				strength: 1,
+				radius: 0.5,
+				exposure: 1
+			};
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				const container = document.getElementById( 'container' );
+
+				timer = new THREE.Timer();
+				timer.connect( document );
+
+				const scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 1, 100 );
+				camera.position.set( - 5, 2.5, - 3.5 );
+				scene.add( camera );
+
+				scene.add( new THREE.AmbientLight( 0xcccccc ) );
+
+				const pointLight = new THREE.PointLight( 0xffffff, 100 );
+				camera.add( pointLight );
+
+				const loader = new GLTFLoader();
+				const gltf = await loader.loadAsync( 'models/gltf/PrimaryIonDrive.glb' );
+
+				const model = gltf.scene;
+				scene.add( model );
+
+				mixer = new THREE.AnimationMixer( model );
+				const clip = gltf.animations[ 0 ];
+				mixer.clipAction( clip.optimize() ).play();
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				container.appendChild( renderer.domElement );
+
+				//
+
+				const renderScene = new RenderPass( scene, camera );
+
+				const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ), 1.5, 0.4, 0.85 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：UnrealBloomPass 接收屏幕尺寸和初始 threshold/strength/radius。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				bloomPass.threshold = params.threshold;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：threshold 太低时普通亮面也会发光，画面会脏。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				bloomPass.strength = params.strength;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：strength 太高时光晕糊成一片。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				bloomPass.radius = params.radius;
+
+				const outputPass = new OutputPass();
+
+				composer = new EffectComposer( renderer );
+				composer.addPass( renderScene );
+				composer.addPass( bloomPass );
+				composer.addPass( outputPass );
+
+				//
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				//
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.maxPolarAngle = Math.PI * 0.5;
+				controls.minDistance = 3;
+				controls.maxDistance = 8;
+
+				//
+
+				const gui = new GUI();
+
+				const bloomFolder = gui.addFolder( 'bloom' );
+
+				bloomFolder.add( params, 'threshold', 0.0, 1.0 ).onChange( function ( value ) {
+
+					bloomPass.threshold = Number( value );
+
+				} );
+
+				bloomFolder.add( params, 'strength', 0.0, 3.0 ).onChange( function ( value ) {
+
+					bloomPass.strength = Number( value );
+
+				} );
+
+				gui.add( params, 'radius', 0.0, 1.0 ).step( 0.01 ).onChange( function ( value ) {
+
+					bloomPass.radius = Number( value );
+
+				} );
+
+				const toneMappingFolder = gui.addFolder( 'tone mapping' );
+
+				toneMappingFolder.add( params, 'exposure', 0.1, 2 ).onChange( function ( value ) {
+
+					renderer.toneMappingExposure = Math.pow( value, 4.0 );
+
+				} );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( width, height );
+				composer.setSize( width, height );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				timer.update();
+
+				const delta = timer.getDelta();
+
+				mixer.update( delta );
+
+				stats.update();
+
+				composer.render();
+
+			}
+
+		</script>
+
+	</body>
+
+</html>

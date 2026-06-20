@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>threejs webgl - materials - hdr environment mapping</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="threejs webgl - materials - hdr environment mapping">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_materials_envmaps_hdr.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_materials_envmaps_hdr.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">threejs</a> - High dynamic range (RGBE) Image-based Lighting (IBL)<br />using run-time generated pre-filtered roughness mipmaps (PMREM)<br/>
+			Created by Prashant Sharma and <a href="http://clara.io/" target="_blank" rel="noopener">Ben Houston</a>.
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_materials_envmaps_hdr.html
+			 * 分组：B｜光照材质
+			 * 目标：学习 HDR 环境贴图如何通过 PMREM 变成适合 PBR 材质采样的反射环境，并比较 Generated/LDR/HDR 的差别。
+			 *
+			 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+			 *
+			 * 核心知识点：
+			 * 1. HDR 比 LDR 有更高亮度范围
+			 * 2. PMREM 为不同 roughness 预过滤环境
+			 * 3. MeshStandardMaterial 的 metalness/roughness 强依赖 envMap
+			 * 4. plane debug 用来直接查看环境贴图
+			 * 5. toneMappingExposure 影响最终输出
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   hdrCubeMap = new HDRCubeTextureLoader()
+			 *     .setPath( './textures/cube/pisaHDR/' )
+			 *     .load( hdrUrls, function () {
+			 *       hdrCubeRenderTarget = pmremGenerator.fromCubemap( hdrCubeMap );
+			 *     } );
+			 *   
+			 *   const pmremGenerator = new THREE.PMREMGenerator( renderer );
+			 *   ldrCubeRenderTarget = pmremGenerator.fromCubemap( ldrCubeMap );
+			 *   
+			 *   const newEnvMap = renderTarget ? renderTarget.texture : null;
+			 *   torusMesh.material.envMap = newEnvMap;
+			 *   torusMesh.material.needsUpdate = true;
+			 *   
+			 *   scene.background = cubeMap;
+			 *   renderer.toneMappingExposure = params.exposure;
+			 *
+			 * 这些代码在做什么：
+			 * 1. HDRCubeTextureLoader 加载六张 .hdr cube face，包含更丰富亮度。
+			 * 2. PMREMGenerator.fromCubemap 会生成按粗糙度预过滤的环境贴图。
+			 * 3. renderTarget.texture 才是 PBR 材质真正使用的预过滤环境贴图。
+			 * 4. 材质 envMap 换掉后要 needsUpdate，否则 shader 可能不会按新贴图重新编译。
+			 * 5. scene.background 用原始 cubeMap 做背景显示；它和材质 envMap 是相关但不同的用途。
+			 * 6. renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. PBR 材质预览器
+			 * 2. 金属产品展示
+			 * 3. HDR 环境照明
+			 * 4. 材质调试工具
+			 * 5. 反射质量对比
+			 *
+			 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_materials_envmaps_hdr.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { HDRCubeTextureLoader } from 'three/addons/loaders/HDRCubeTextureLoader.js';
+			import { DebugEnvironment } from 'three/addons/environments/DebugEnvironment.js';
+
+			const params = {
+				envMap: 'HDR',
+				roughness: 0.0,
+				metalness: 0.0,
+				exposure: 1.0,
+				debug: false
+			};
+
+			let container, stats;
+			let camera, scene, renderer, controls;
+			let torusMesh, planeMesh;
+			let generatedCubeRenderTarget, ldrCubeRenderTarget, hdrCubeRenderTarget;
+			let ldrCubeMap, hdrCubeMap;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 1, 1000 );
+				camera.position.set( 0, 0, 120 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 );
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+				//
+
+				let geometry = new THREE.TorusKnotGeometry( 18, 8, 150, 20 );
+				// let geometry = new THREE.SphereGeometry( 26, 64, 32 );
+				let material = new THREE.MeshStandardMaterial( {
+					color: 0xffffff,
+					metalness: params.metalness,
+					roughness: params.roughness
+				} );
+
+				torusMesh = new THREE.Mesh( geometry, material );
+				scene.add( torusMesh );
+
+
+				geometry = new THREE.PlaneGeometry( 200, 200 );
+				material = new THREE.MeshBasicMaterial();
+
+				planeMesh = new THREE.Mesh( geometry, material );
+				planeMesh.position.y = - 50;
+				planeMesh.rotation.x = - Math.PI * 0.5;
+				scene.add( planeMesh );
+
+				THREE.DefaultLoadingManager.onLoad = function ( ) {
+
+					pmremGenerator.dispose();
+
+				};
+
+				const hdrUrls = [ 'px.hdr', 'nx.hdr', 'py.hdr', 'ny.hdr', 'pz.hdr', 'nz.hdr' ];
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：HDRCubeTextureLoader 加载六张 .hdr cube face，包含更丰富亮度。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				hdrCubeMap = new HDRCubeTextureLoader()
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：PMREMGenerator.fromCubemap 会生成按粗糙度预过滤的环境贴图。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.setPath( './textures/cube/pisaHDR/' )
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：renderTarget.texture 才是 PBR 材质真正使用的预过滤环境贴图。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.load( hdrUrls, function () {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：材质 envMap 换掉后要 needsUpdate，否则 shader 可能不会按新贴图重新编译。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						hdrCubeRenderTarget = pmremGenerator.fromCubemap( hdrCubeMap );
+
+						hdrCubeMap.magFilter = THREE.LinearFilter;
+						hdrCubeMap.needsUpdate = true;
+
+					} );
+
+				const ldrUrls = [ 'px.png', 'nx.png', 'py.png', 'ny.png', 'pz.png', 'nz.png' ];
+				ldrCubeMap = new THREE.CubeTextureLoader()
+					.setPath( './textures/cube/pisa/' )
+					.load( ldrUrls, function () {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						ldrCubeRenderTarget = pmremGenerator.fromCubemap( ldrCubeMap );
+
+					} );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：scene.background 用原始 cubeMap 做背景显示；它和材质 envMap 是相关但不同的用途。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+				pmremGenerator.compileCubemapShader();
+
+				const envScene = new DebugEnvironment();
+				generatedCubeRenderTarget = pmremGenerator.fromScene( envScene );
+
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				container.appendChild( renderer.domElement );
+
+				//renderer.toneMapping = ReinhardToneMapping;
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.minDistance = 50;
+				controls.maxDistance = 300;
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				const gui = new GUI();
+
+				gui.add( params, 'envMap', [ 'Generated', 'LDR', 'HDR' ] );
+				gui.add( params, 'roughness', 0, 1, 0.01 );
+				gui.add( params, 'metalness', 0, 1, 0.01 );
+				gui.add( params, 'exposure', 0, 2, 0.01 );
+				gui.add( params, 'debug' );
+				gui.open();
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( width, height );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				stats.begin();
+				render();
+				stats.end();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				torusMesh.material.roughness = params.roughness;
+				torusMesh.material.metalness = params.metalness;
+
+				let renderTarget, cubeMap;
+
+				switch ( params.envMap ) {
+
+					case 'Generated':
+						renderTarget = generatedCubeRenderTarget;
+						cubeMap = generatedCubeRenderTarget.texture;
+						break;
+					case 'LDR':
+						renderTarget = ldrCubeRenderTarget;
+						cubeMap = ldrCubeMap;
+						break;
+					case 'HDR':
+						renderTarget = hdrCubeRenderTarget;
+						cubeMap = hdrCubeMap;
+						break;
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const newEnvMap = renderTarget ? renderTarget.texture : null;
+
+				if ( newEnvMap && newEnvMap !== torusMesh.material.envMap ) {
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					torusMesh.material.envMap = newEnvMap;
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					torusMesh.material.needsUpdate = true;
+
+					planeMesh.material.map = newEnvMap;
+					planeMesh.material.needsUpdate = true;
+
+				}
+
+				torusMesh.rotation.y += 0.005;
+				planeMesh.visible = params.debug;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.background = cubeMap;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：renderer.toneMappingExposure 控制 HDR 高亮压到屏幕前的整体曝光。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				renderer.toneMappingExposure = params.exposure;
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

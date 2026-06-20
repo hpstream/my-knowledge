@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - orbit controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - orbit controls">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/misc_controls_orbit.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/misc_controls_orbit.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #ccc;
+				color: #000;
+			}
+
+			a {
+				color: #f00;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - orbit controls
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：misc_controls_orbit.html
+			 * 分组：A｜观察调试
+			 * 目标：学习如何用鼠标围绕一个目标点观察 3D 场景，并理解阻尼、距离限制、垂直角度限制为什么影响操作手感。
+			 *
+			 * 阅读顺序：先找 camera / controls / helper，再看 resize 和每帧 controls.update。观察调试类案例的重点不是画面多复杂，而是你能不能判断相机、坐标、尺寸和包围范围是否正确。
+			 *
+			 * 核心知识点：
+			 * 1. OrbitControls 的 target 是观察中心，不是相机位置
+			 * 2. enableDamping 需要每帧 controls.update
+			 * 3. minDistance/maxDistance 限制缩放范围
+			 * 4. maxPolarAngle 限制相机不能钻到地面下
+			 * 5. InstancedMesh 只是场景内容，用来提供大量可观察对象
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   controls = new OrbitControls( camera, renderer.domElement );
+			 *   controls.enableDamping = true;
+			 *   controls.dampingFactor = 0.05;
+			 *   controls.minDistance = 100;
+			 *   controls.maxDistance = 500;
+			 *   controls.maxPolarAngle = Math.PI / 2;
+			 *   
+			 *   function animate() {
+			 *     controls.update();
+			 *     render();
+			 *   }
+			 *
+			 * 这些代码在做什么：
+			 * 1. 第一行把相机、canvas 和控制器绑定起来，鼠标事件会改变 camera 的位置和朝向。
+			 * 2. enableDamping 打开后，相机不会立即停下，会像有惯性一样慢慢衰减。
+			 * 3. 因为阻尼是逐帧计算的，所以动画循环里必须调用 controls.update。
+			 * 4. minDistance/maxDistance 是产品展示、模型查看器常用的防误操作限制。
+			 * 5. maxPolarAngle = PI/2 表示最多看平到地平线附近，不允许绕到地面下面。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 模型预览器
+			 * 2. 产品展示页
+			 * 3. 三维编辑器基础视角
+			 * 4. 地图和建筑浏览器
+			 * 5. 任何需要“围着物体看”的工具
+			 *
+			 * 对应讲解文档：../官方案例讲解/A-观察调试/misc_controls_orbit.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+			let camera, controls, scene, renderer;
+
+			init();
+			//render(); // remove when using animation loop
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xcccccc );
+				scene.fog = new THREE.FogExp2( 0xcccccc, 0.002 );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 1000 );
+				camera.position.set( 400, 200, 0 );
+
+				// controls
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：第一行把相机、canvas 和控制器绑定起来，鼠标事件会改变 camera 的位置和朝向。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.listenToKeyEvents( window ); // optional
+
+				//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+
+				controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：enableDamping 打开后，相机不会立即停下，会像有惯性一样慢慢衰减。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.dampingFactor = 0.05;
+
+				controls.screenSpacePanning = false;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：因为阻尼是逐帧计算的，所以动画循环里必须调用 controls.update。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.minDistance = 100;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：minDistance/maxDistance 是产品展示、模型查看器常用的防误操作限制。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.maxDistance = 500;
+
+				controls.cursorStyle = 'grab';
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：maxPolarAngle = PI/2 表示最多看平到地平线附近，不允许绕到地面下面。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				controls.maxPolarAngle = Math.PI / 2;
+
+				// world
+
+				const geometry = new THREE.ConeGeometry( 10, 30, 4, 1 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				const mesh = new THREE.InstancedMesh( geometry, material, 500 );
+				const dummy = new THREE.Object3D();
+
+				for ( let i = 0; i < 500; i ++ ) {
+
+					dummy.position.x = Math.random() * 1600 - 800;
+					dummy.position.y = 0;
+					dummy.position.z = Math.random() * 1600 - 800;
+
+					dummy.updateMatrix();
+					mesh.setMatrixAt( i, dummy.matrix );
+
+				}
+
+				scene.add( mesh );
+
+				// lights
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff, 3 );
+				dirLight1.position.set( 1, 1, 1 );
+				scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288, 3 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x555555 );
+				scene.add( ambientLight );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：maxPolarAngle = PI/2 表示最多看平到地平线附近，不允许绕到地面下面。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+			function animate() {
+
+				controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：maxPolarAngle = PI/2 表示最多看平到地平线附近，不允许绕到地面下面。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				render();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

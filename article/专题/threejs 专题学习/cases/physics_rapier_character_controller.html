@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - rapier3d character controller</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - rapier3d character controller">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_rapier_character_controller.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_rapier_character_controller.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				color: #333;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/dimforge/rapier.js" target="_blank">rapier</a> character controller
+			<p>WASD or Arrow keys to move</p>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_rapier_character_controller.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习角色不是直接改 mesh.position，而是让物理角色控制器计算可行移动，避免穿墙和穿地。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. createCharacterController
+			 * 2. 胶囊碰撞体
+			 * 3. computeColliderMovement
+			 * 4. computedMovement
+			 * 5. WASD 输入
+			 * 6. 相机跟随
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   characterController = physics.world.createCharacterController( 0.01 );
+			 *   characterController.setApplyImpulsesToDynamicBodies( true );
+			 *   characterController.setCharacterMass( 3 );
+			 *   
+			 *   characterController.computeColliderMovement( player.userData.collider, moveVector );
+			 *   const translation = characterController.computedMovement();
+			 *   position.x += translation.x;
+			 *
+			 * 这些代码在做什么：
+			 * 1. 角色移动不能只写 player.position += speed，因为这样会穿过墙、坡、台阶和其他物体。
+			 * 2. CharacterController 会根据碰撞体和期望移动量，算出实际允许移动多少。
+			 * 3. 0.01 是 offset，给角色和环境之间留一点缝，减少卡住或贴面抖动。
+			 * 4. 胶囊体适合角色，因为上下圆滑，不容易被小台阶和边缘卡住。
+			 * 5. setApplyImpulsesToDynamicBodies(true) 让角色推开动态刚体，而不是只从刚体旁边滑过去。
+			 * 6. 最终同步的是 collider 的位置，再把可视化的 player mesh 放到 collider 位置上。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做第一人称/第三人称漫游
+			 * 2. 做展厅、建筑、数字孪生中的可走动角色
+			 * 3. 做平台跳跃和避障游戏
+			 * 4. 做可推箱子的交互场景
+			 * 5. 扩展成跳跃、坡道、楼梯、地面检测
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_rapier_character_controller.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RapierPhysics } from 'three/addons/physics/RapierPhysics.js';
+			import { RapierHelper } from 'three/addons/helpers/RapierHelper.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats;
+			let physics, characterController, physicsHelper;
+			let player, movement;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				scene = new THREE.Scene();
+
+				scene.background = new THREE.Color( 0xbfd1e5 );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 2, 5, 15 );
+
+				const ambient = new THREE.HemisphereLight( 0x555555, 0xFFFFFF );
+
+				scene.add( ambient );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 3 );
+
+				light.position.set( 0, 12.5, 12.5 );
+				light.castShadow = true;
+				light.shadow.radius = 3;
+				light.shadow.blurSamples = 8;
+				light.shadow.mapSize.width = 1024;
+				light.shadow.mapSize.height = 1024;
+
+				const size = 10;
+				light.shadow.camera.left = - size;
+				light.shadow.camera.bottom = - size;
+				light.shadow.camera.right = size;
+				light.shadow.camera.top = size;
+				light.shadow.camera.near = 1;
+				light.shadow.camera.far = 50;
+
+				scene.add( light );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+				renderer.setAnimationLoop( animate );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.target = new THREE.Vector3( 0, 2, 0 );
+				controls.update();
+
+				const geometry = new THREE.BoxGeometry( 20, 0.5, 20 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xFFFFFF } );
+
+				const ground = new THREE.Mesh( geometry, material );
+				ground.receiveShadow = true;
+
+				ground.position.y = - 0.25;
+				ground.userData.physics = { mass: 0 };
+
+				scene.add( ground );
+
+				new THREE.TextureLoader().load( 'textures/grid.png', function ( texture ) {
+
+					texture.wrapS = THREE.RepeatWrapping;
+					texture.wrapT = THREE.RepeatWrapping;
+					texture.repeat.set( 20, 20 );
+					ground.material.map = texture;
+					ground.material.needsUpdate = true;
+
+				} );
+
+				for ( let i = 0; i < 10; i ++ ) addBody( Math.random() > 0.7 );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				initPhysics();
+
+				onWindowResize();
+
+				// Movement input
+				movement = { forward: 0, right: 0 };
+
+				window.addEventListener( 'keydown', ( event ) => {
+
+					if ( event.key === 'w' || event.key === 'ArrowUp' ) movement.forward = 1;
+					if ( event.key === 's' || event.key === 'ArrowDown' ) movement.forward = - 1;
+					if ( event.key === 'a' || event.key === 'ArrowLeft' ) movement.right = - 1;
+					if ( event.key === 'd' || event.key === 'ArrowRight' ) movement.right = 1;
+			
+				} );
+
+				window.addEventListener( 'keyup', ( event ) => {
+			
+					if ( event.key === 'w' || event.key === 's' || event.key === 'ArrowUp' || event.key === 'ArrowDown' ) movement.forward = 0;
+					if ( event.key === 'a' || event.key === 'd' || event.key === 'ArrowLeft' || event.key === 'ArrowRight' ) movement.right = 0;
+			
+				} );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			function random( min, max ) {
+
+				return Math.random() * ( max - min ) + min;
+
+			}
+
+			async function initPhysics() {
+
+				//Initialize physics engine using the script in the jsm/physics folder
+				physics = await RapierPhysics();
+
+				//Optionally display collider outlines
+				physicsHelper = new RapierHelper( physics.world );
+				scene.add( physicsHelper );
+
+				physics.addScene( scene );
+
+				addCharacterController( );
+
+			}
+
+			function addCharacterController() {
+
+				// Character Capsule
+				const geometry = new THREE.CapsuleGeometry( 0.3, 1, 8, 8 );
+				const material = new THREE.MeshStandardMaterial( { color: 0x0000ff } );
+				player = new THREE.Mesh( geometry, material );
+				player.castShadow = true;
+				player.position.set( 0, 0.8, 0 );
+				scene.add( player );
+
+				// Rapier Character Controller
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：角色移动不能只写 player.position += speed，因为这样会穿过墙、坡、台阶和其他物体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				characterController = physics.world.createCharacterController( 0.01 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：CharacterController 会根据碰撞体和期望移动量，算出实际允许移动多少。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				characterController.setApplyImpulsesToDynamicBodies( true );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：0.01 是 offset，给角色和环境之间留一点缝，减少卡住或贴面抖动。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				characterController.setCharacterMass( 3 );
+				const colliderDesc = physics.RAPIER.ColliderDesc.capsule( 0.5, 0.3 ).setTranslation( 0, 0.8, 0 );
+				player.userData.collider = physics.world.createCollider( colliderDesc );
+
+			}
+
+			function addBody( fixed = true ) {
+			
+				const geometry = ( fixed ) ? new THREE.BoxGeometry( 1, 1, 1 ) : new THREE.SphereGeometry( 0.25 );
+				const material = new THREE.MeshStandardMaterial( { color: fixed ? 0xFF0000 : 0x00FF00 } );
+
+				const mesh = new THREE.Mesh( geometry, material );
+				mesh.castShadow = true;
+
+				mesh.position.set( random( - 10, 10 ), 0.5, random( - 10, 10 ) );
+
+				mesh.userData.physics = { mass: fixed ? 0 : 0.5, restitution: fixed ? 0 : 0.3 };
+
+				scene.add( mesh );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize( ) {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+
+			function animate() {
+
+				if ( physicsHelper ) physicsHelper.update();
+
+				renderer.render( scene, camera );
+
+				if ( physics && characterController ) {
+
+					const deltaTime = 1 / 60;
+
+					// Character movement
+					const speed = 2.5 * deltaTime;
+					const moveVector = new physics.RAPIER.Vector3( movement.right * speed, 0, - movement.forward * speed );
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：胶囊体适合角色，因为上下圆滑，不容易被小台阶和边缘卡住。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					characterController.computeColliderMovement( player.userData.collider, moveVector );
+
+					// Read the result.
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：setApplyImpulsesToDynamicBodies(true) 让角色推开动态刚体，而不是只从刚体旁边滑过去。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const translation = characterController.computedMovement();
+					const position = player.userData.collider.translation();
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：最终同步的是 collider 的位置，再把可视化的 player mesh 放到 collider 位置上。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					position.x += translation.x;
+					position.y += translation.y;
+					position.z += translation.z;
+
+					player.userData.collider.setTranslation( position );
+
+					// Sync Three.js mesh with Rapier collider
+					player.position.set( position.x, position.y, position.z );
+
+				}
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

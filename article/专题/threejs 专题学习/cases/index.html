@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Three.js 官方案例本地镜像</title>
+    <style>
+      body { margin: 0; background: #f6f4ee; color: #202124; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+      main { max-width: 1240px; margin: 0 auto; padding: 40px 20px 72px; }
+      h1 { margin: 0 0 10px; font-size: 32px; line-height: 1.25; letter-spacing: 0; }
+      h2 { margin: 34px 0 12px; font-size: 22px; letter-spacing: 0; }
+      p { line-height: 1.75; }
+      .note { padding: 14px 16px; border: 1px solid #d4ccbd; border-radius: 8px; background: #fffaf0; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
+      .card { min-height: 178px; padding: 15px; border: 1px solid #d5cec2; border-radius: 8px; background: #fffdf8; }
+      .card strong { display: block; margin-bottom: 8px; font-size: 15px; line-height: 1.45; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+      .card span { display: block; color: #202124; font-weight: 650; font-size: 15px; line-height: 1.6; }
+      .card p { margin: 8px 0 14px; color: #555c66; font-size: 14px; line-height: 1.65; }
+      .links { display: flex; flex-wrap: wrap; gap: 8px; }
+      .links a { border: 1px solid #b9c4d4; border-radius: 6px; padding: 6px 10px; color: #14395f; text-decoration: none; background: #f2f7ff; font-size: 14px; }
+      code { border-radius: 4px; background: #e8e0d3; padding: 1px 5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Three.js 官方案例本地镜像</h1>
+      <p class="note">当前入口包含 48 个 three.js 官网 examples 本地镜像。HTML 文件名保持官网原名；每个案例都有一篇对应讲解文档，讲它的核心代码、参数观察方法，以及后面能拿来做什么。</p>
+      <p>启动方式：在 <code>article/专题/threejs 专题学习</code> 下运行 <code>python3 -m http.server 8088</code>，打开 <code>http://127.0.0.1:8088/cases/</code>。</p>
+
+      <section>
+        <h2>A｜观察调试</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>misc_controls_orbit.html</strong>
+            <span>OrbitControls：围绕目标观察场景</span>
+            <p>学习如何用鼠标围绕一个目标点观察 3D 场景，并理解阻尼、距离限制、垂直角度限制为什么影响操作手感。</p>
+            <div class="links">
+              <a href="./misc_controls_orbit.html">打开案例</a>
+              <a href="../官方案例讲解/A-观察调试/misc_controls_orbit.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_camera.html</strong>
+            <span>Camera：透视相机、正交相机和 CameraHelper</span>
+            <p>学习相机视锥、near/far 裁剪面、透视/正交切换，以及为什么 CameraHelper 能帮你看见“另一台相机在拍哪里”。</p>
+            <div class="links">
+              <a href="./webgl_camera.html">打开案例</a>
+              <a href="../官方案例讲解/A-观察调试/webgl_camera.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_helpers.html</strong>
+            <span>Helpers：网格、极坐标网格和包围盒调试</span>
+            <p>学习如何用 helper 建立空间方向感，并用 BoxHelper 看清对象、group 和整个 scene 的真实包围范围。</p>
+            <div class="links">
+              <a href="./webgl_helpers.html">打开案例</a>
+              <a href="../官方案例讲解/A-观察调试/webgl_helpers.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>B｜光照材质</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>webgl_lightprobe.html</strong>
+            <span>LightProbe：把一个位置的环境亮度压缩成补光</span>
+            <p>用官方案例理解 LightProbe 不是灯泡，也不是反射贴图；它是从四周环境里提取“哪里亮、哪里暗、偏什么颜色”的柔和补光数据。</p>
+            <div class="links">
+              <a href="./webgl_lightprobe.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lightprobe.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lightprobes.html</strong>
+            <span>LightProbes：很多个点位的环境补光</span>
+            <p>理解单个 LightProbe 只代表一个位置；多个 probe 排成网格后，就像在房间里多个位置都测了一圈环境亮度，让移动物体能获得不同区域的环境补光。</p>
+            <div class="links">
+              <a href="./webgl_lightprobes.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lightprobes.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lights_hemisphere.html</strong>
+            <span>Hemisphere Light：天空光、地面反光和户外氛围</span>
+            <p>学习半球光如何用天空色和地面色给户外模型补光，并与 DirectionalLight 共同形成自然日光。</p>
+            <div class="links">
+              <a href="./webgl_lights_hemisphere.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lights_hemisphere.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lights_physical.html</strong>
+            <span>Physical Lights：真实单位、灯泡、曝光和距离衰减</span>
+            <p>学习 three.js 里物理灯光的整体链路：PointLight、HemisphereLight、真实 lumen/lux、decay=2、toneMappingExposure 和阴影。</p>
+            <div class="links">
+              <a href="./webgl_lights_physical.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lights_physical.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lights_rectarealight.html</strong>
+            <span>RectAreaLight：窗户、柔光箱和长条高光</span>
+            <p>学习有面积的矩形光源如何形成柔和照明和宽高可控的高光形状。</p>
+            <div class="links">
+              <a href="./webgl_lights_rectarealight.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lights_rectarealight.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lights_spotlight.html</strong>
+            <span>SpotLight：锥形光、半影、投影纹理和阴影相机</span>
+            <p>学习聚光灯的完整控制参数，包括 angle、penumbra、decay、distance、shadow.focus、map 和 helper。</p>
+            <div class="links">
+              <a href="./webgl_lights_spotlight.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lights_spotlight.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lights_spotlights.html</strong>
+            <span>Multiple SpotLights：多盏聚光灯的组合效果</span>
+            <p>学习多盏 SpotLight 如何共同照明，以及为什么多阴影光源会带来明显性能成本。</p>
+            <div class="links">
+              <a href="./webgl_lights_spotlights.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_lights_spotlights.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_envmaps_fasthdr.html</strong>
+            <span>FastHDR：PMREM KTX2 环境贴图快速加载</span>
+            <p>学习预过滤好的 PMREM KTX2 环境图如何跳过运行时 PMREM 生成，减少加载时间和 GPU 内存。</p>
+            <div class="links">
+              <a href="./webgl_materials_envmaps_fasthdr.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_envmaps_fasthdr.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_envmaps_hdr.html</strong>
+            <span>HDR EnvMap：IBL、PMREM 和金属反射</span>
+            <p>学习 HDR 环境贴图如何通过 PMREM 变成适合 PBR 材质采样的反射环境，并比较 Generated/LDR/HDR 的差别。</p>
+            <div class="links">
+              <a href="./webgl_materials_envmaps_hdr.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_envmaps_hdr.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_envmaps.html</strong>
+            <span>Environment Maps：普通环境贴图和反射/折射</span>
+            <p>学习环境贴图如何给物体提供反射和折射信息，并理解 mapping、CubeTexture、EquirectangularTexture 的区别。</p>
+            <div class="links">
+              <a href="./webgl_materials_envmaps.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_envmaps.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_physical_clearcoat.html</strong>
+            <span>Clearcoat：汽车漆和透明清漆层</span>
+            <p>学习 MeshPhysicalMaterial 的 clearcoat 如何在底层材质上再加一层透明高光层。</p>
+            <div class="links">
+              <a href="./webgl_materials_physical_clearcoat.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_physical_clearcoat.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_physical_transmission_alpha.html</strong>
+            <span>Transmission Alpha：带透明贴图的透射材质</span>
+            <p>学习透明/透射材质如何结合 alpha 贴图，让材质局部透明或局部透射。</p>
+            <div class="links">
+              <a href="./webgl_materials_physical_transmission_alpha.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_physical_transmission_alpha.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_physical_transmission.html</strong>
+            <span>Transmission：真实透明玻璃不是 opacity</span>
+            <p>学习 MeshPhysicalMaterial 的 transmission、ior、thickness、roughness 如何共同形成玻璃和透明塑料质感。</p>
+            <div class="links">
+              <a href="./webgl_materials_physical_transmission.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_physical_transmission.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_texture_anisotropy.html</strong>
+            <span>Texture Anisotropy：斜着看地面为什么会糊</span>
+            <p>学习各向异性过滤如何改善斜视角下的地面、道路、跑道和长走廊贴图清晰度。</p>
+            <div class="links">
+              <a href="./webgl_materials_texture_anisotropy.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_texture_anisotropy.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_materials_texture_filters.html</strong>
+            <span>Texture Filters：贴图放大缩小时怎么采样</span>
+            <p>学习 magFilter、minFilter、mipmap 如何决定贴图近看、远看、缩小时的清晰度、像素感和闪烁。</p>
+            <div class="links">
+              <a href="./webgl_materials_texture_filters.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_materials_texture_filters.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_tonemapping.html</strong>
+            <span>Tone Mapping：曝光和高动态范围压缩</span>
+            <p>学习高亮、HDR 环境和 PBR 模型最终如何被压到屏幕可显示范围，以及不同 tone mapping 算法的观感差异。</p>
+            <div class="links">
+              <a href="./webgl_tonemapping.html">打开案例</a>
+              <a href="../官方案例讲解/B-光照材质/webgl_tonemapping.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>C｜模型资产和动画</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>webgl_animation_keyframes.html</strong>
+            <span>Animation Keyframes：播放 glTF 关键帧动画</span>
+            <p>学习 glTF 模型自带动画如何通过 AnimationMixer 播放，并用 deltaTime 保持不同帧率下速度一致。</p>
+            <div class="links">
+              <a href="./webgl_animation_keyframes.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_animation_keyframes.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_animation_skinning_additive_blending.html</strong>
+            <span>Additive Blending：叠加动画和表情/姿态层</span>
+            <p>学习基础动作之上如何叠加额外动作，例如一边走路一边点头、摇头、摆姿势。</p>
+            <div class="links">
+              <a href="./webgl_animation_skinning_additive_blending.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_animation_skinning_additive_blending.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_animation_skinning_blending.html</strong>
+            <span>Skinning Blending：骨骼动画切换和混合</span>
+            <p>学习角色 idle、walk、run 等多个动作如何平滑切换，避免从一个动作硬切到另一个动作。</p>
+            <div class="links">
+              <a href="./webgl_animation_skinning_blending.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_animation_skinning_blending.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_loader_gltf_compressed.html</strong>
+            <span>GLTF Compressed：压缩 glTF 模型加载</span>
+            <p>学习现代 glTF 资产如何同时使用网格压缩和纹理压缩，减少下载体积并保持运行效果。</p>
+            <div class="links">
+              <a href="./webgl_loader_gltf_compressed.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_loader_gltf_compressed.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_loader_gltf_variants.html</strong>
+            <span>GLTF Variants：同一个模型切换不同材质方案</span>
+            <p>学习 glTF 的 KHR_materials_variants 扩展，用一个模型承载多个材质变体，例如鞋子的不同配色。</p>
+            <div class="links">
+              <a href="./webgl_loader_gltf_variants.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_loader_gltf_variants.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_loader_gltf.html</strong>
+            <span>GLTFLoader：加载真实模型并自动适配相机</span>
+            <p>学习真实 glTF 模型加载、环境贴图、动画播放，以及官方 fitCameraToSelection 如何用 Box3 自动把相机摆到合适距离。</p>
+            <div class="links">
+              <a href="./webgl_loader_gltf.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_loader_gltf.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_loader_texture_ktx2.html</strong>
+            <span>Texture KTX2：GPU 压缩纹理加载和格式对比</span>
+            <p>学习 KTX2 压缩纹理为什么适合 Web 3D，以及不同压缩格式、mipmap、透明度和采样方式的差异。</p>
+            <div class="links">
+              <a href="./webgl_loader_texture_ktx2.html">打开案例</a>
+              <a href="../官方案例讲解/C-模型资产动画/webgl_loader_texture_ktx2.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>D｜交互编辑</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>css2d_label.html</strong>
+            <span>CSS2DRenderer：把 HTML 标签贴到 3D 坐标上</span>
+            <p>学习如何让普通 DOM 跟随 3D 对象移动，用于标注、热点、名称牌和信息浮层。</p>
+            <div class="links">
+              <a href="./css2d_label.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/css2d_label.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>misc_controls_drag.html</strong>
+            <span>DragControls：直接拖拽 3D 物体</span>
+            <p>学习如何让鼠标拖动物体，并理解拖拽控制和 OrbitControls 为什么需要互斥。</p>
+            <div class="links">
+              <a href="./misc_controls_drag.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/misc_controls_drag.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>misc_controls_transform.html</strong>
+            <span>TransformControls：编辑器里的移动、旋转、缩放手柄</span>
+            <p>学习 3D 编辑器 gizmo 的基本实现：attach 目标对象、切换 translate/rotate/scale、世界/本地坐标和吸附。</p>
+            <div class="links">
+              <a href="./misc_controls_transform.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/misc_controls_transform.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_instancing_raycast.html</strong>
+            <span>InstancedMesh Raycast：大量实例里知道点中哪一个</span>
+            <p>学习 Raycaster 命中 InstancedMesh 后如何通过 instanceId 找到具体实例，并修改单个实例的颜色或状态。</p>
+            <div class="links">
+              <a href="./webgl_instancing_raycast.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/webgl_instancing_raycast.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_interactive_cubes.html</strong>
+            <span>Raycaster：鼠标悬停拾取 2000 个立方体</span>
+            <p>学习屏幕坐标如何转成 NDC，再用 Raycaster 从相机发出射线命中 3D 对象。</p>
+            <div class="links">
+              <a href="./webgl_interactive_cubes.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/webgl_interactive_cubes.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_interactive_voxelpainter.html</strong>
+            <span>Voxel Painter：网格吸附式体素编辑</span>
+            <p>学习如何用 Raycaster、法线方向和网格吸附实现“点击放置方块、按键删除方块”的编辑器能力。</p>
+            <div class="links">
+              <a href="./webgl_interactive_voxelpainter.html">打开案例</a>
+              <a href="../官方案例讲解/D-交互编辑/webgl_interactive_voxelpainter.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>E｜性能大量对象和后处理</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>webgl_instancing_dynamic.html</strong>
+            <span>Dynamic Instancing：大量实例动起来时要更新什么</span>
+            <p>学习实例矩阵每帧变化时如何更新 instanceMatrix，并理解 DynamicDrawUsage 的意义。</p>
+            <div class="links">
+              <a href="./webgl_instancing_dynamic.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_instancing_dynamic.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_instancing_performance.html</strong>
+            <span>Instancing Performance：一万个对象为什么不该是一万个 Mesh</span>
+            <p>学习 InstancedMesh 如何用一次 draw call 绘制大量相同几何，并比较普通 Mesh、merged geometry 和 instancing 的差别。</p>
+            <div class="links">
+              <a href="./webgl_instancing_performance.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_instancing_performance.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_lines_fat.html</strong>
+            <span>Fat Lines：普通 Line 为什么控制不了稳定宽度</span>
+            <p>学习 Line2/LineMaterial 如何实现屏幕空间粗线，并理解 resolution 对线宽计算的影响。</p>
+            <div class="links">
+              <a href="./webgl_lines_fat.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_lines_fat.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_points_sprites.html</strong>
+            <span>Points Sprites：什么时候不要用 Mesh</span>
+            <p>学习用 Points 和贴图点精灵渲染大量小元素，而不是为每个点创建独立 Mesh。</p>
+            <div class="links">
+              <a href="./webgl_points_sprites.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_points_sprites.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_postprocessing_ssao.html</strong>
+            <span>SSAO：为什么角落和接缝需要更暗一点</span>
+            <p>学习屏幕空间环境遮蔽如何让接触处、缝隙和角落变暗，增强空间层次。</p>
+            <div class="links">
+              <a href="./webgl_postprocessing_ssao.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_postprocessing_ssao.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_postprocessing_unreal_bloom.html</strong>
+            <span>UnrealBloomPass：发光光晕为什么是后期，不是真灯</span>
+            <p>学习 Bloom 如何让高亮区域在屏幕上向周围扩散，并区分它和真实照明的区别。</p>
+            <div class="links">
+              <a href="./webgl_postprocessing_unreal_bloom.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_postprocessing_unreal_bloom.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>webgl_postprocessing.html</strong>
+            <span>EffectComposer：后处理为什么不是 renderer.render</span>
+            <p>学习后处理管线如何把场景先渲染到纹理，再通过多个 pass 做屏幕空间效果。</p>
+            <div class="links">
+              <a href="./webgl_postprocessing.html">打开案例</a>
+              <a href="../官方案例讲解/E-性能大量对象后处理/webgl_postprocessing.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>F｜物理模拟</h2>
+        <div class="grid">
+          <article class="card">
+            <strong>physics_ammo_break.html</strong>
+            <span>Ammo Break：刚体碰撞和物体破碎</span>
+            <p>学习 Ammo.js 如何处理刚体世界、碰撞接触点、冲击强度，以及如何把一个可破碎物体拆成碎块。</p>
+            <div class="links">
+              <a href="./physics_ammo_break.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_ammo_break.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_ammo_cloth.html</strong>
+            <span>Ammo Cloth：软体布料和锚点约束</span>
+            <p>学习布料不是普通刚体，而是由很多软体节点组成；节点受重力、风、碰撞和锚点一起影响。</p>
+            <div class="links">
+              <a href="./physics_ammo_cloth.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_ammo_cloth.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_ammo_rope.html</strong>
+            <span>Ammo Rope：绳索软体和两端连接</span>
+            <p>学习绳子如何用软体线段模拟，并通过锚点连接到刚体，让球、杆和绳子形成联动系统。</p>
+            <div class="links">
+              <a href="./physics_ammo_rope.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_ammo_rope.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_jolt_instancing.html</strong>
+            <span>Jolt Instancing：Jolt 物理和 WebGPU 批量刚体</span>
+            <p>学习 Jolt 物理引擎如何和 Three 的 InstancedMesh 结合，在大量相同物体上保持渲染和物理性能。</p>
+            <div class="links">
+              <a href="./physics_jolt_instancing.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_jolt_instancing.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_rapier_basic.html</strong>
+            <span>Rapier Basic：最小刚体世界</span>
+            <p>学习 Rapier 在 Three 中的最小接入方式：场景、地面、动态刚体、反弹系数和物理调试器。</p>
+            <div class="links">
+              <a href="./physics_rapier_basic.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_rapier_basic.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_rapier_character_controller.html</strong>
+            <span>Rapier Character Controller：角色移动和碰撞避障</span>
+            <p>学习角色不是直接改 mesh.position，而是让物理角色控制器计算可行移动，避免穿墙和穿地。</p>
+            <div class="links">
+              <a href="./physics_rapier_character_controller.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_rapier_character_controller.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_rapier_instancing.html</strong>
+            <span>Rapier Instancing：大量实例化刚体</span>
+            <p>学习如何让成百上千个相同物体既用 InstancedMesh 高效渲染，又拥有独立物理状态。</p>
+            <div class="links">
+              <a href="./physics_rapier_instancing.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_rapier_instancing.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_rapier_joints.html</strong>
+            <span>Rapier Joints：关节、链条和约束</span>
+            <p>学习两个刚体之间如何通过关节连接，从而形成链条、吊挂、机械臂这类受约束的运动。</p>
+            <div class="links">
+              <a href="./physics_rapier_joints.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_rapier_joints.md">读讲解</a>
+            </div>
+          </article>
+          <article class="card">
+            <strong>physics_rapier_vehicle_controller.html</strong>
+            <span>Rapier Vehicle Controller：车辆控制器和轮胎参数</span>
+            <p>学习车辆不只是四个轮子跟着车身转，而是底盘刚体、悬挂、轮胎摩擦、转向、刹车和驱动力的组合。</p>
+            <div class="links">
+              <a href="./physics_rapier_vehicle_controller.html">打开案例</a>
+              <a href="../官方案例讲解/F-物理模拟/physics_rapier_vehicle_controller.md">读讲解</a>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - KTX2 texture loader</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - KTX2 texture loader">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_loader_texture_ktx2.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_loader_texture_ktx2.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			* {
+				box-sizing: border-box;
+				-moz-box-sizing: border-box;
+			}
+
+			body {
+				background-color: #fff;
+				color: #444;
+			}
+
+			a {
+				color: #08f;
+			}
+
+			#content {
+				position: absolute;
+				top: 0; width: 100%;
+				z-index: 1;
+				padding: 3em 0 0 0;
+			}
+
+			section {
+				padding: 1em;
+			}
+
+			#c {
+				position: absolute;
+				left: 0;
+				width: 100%;
+				height: 100%;
+			}
+
+			section .description {
+				max-width: 50em;
+				text-wrap: pretty;
+			}
+
+			.list-item {
+				display: inline-block;
+				margin: 1em;
+				padding: 1em;
+				box-shadow: 1px 2px 4px 0px rgba(0,0,0,0.25);
+			}
+
+			.list-item > div:nth-child(1) {
+				width: 200px;
+				height: 200px;
+			}
+
+			.list-item > div:nth-child(2) {
+				color: #888;
+				font-family: sans-serif;
+				width: 200px;
+				margin-top: 0.5em;
+			}
+		</style>
+	</head>
+	<body>
+
+		<canvas id="c"></canvas>
+
+		<div id="content">
+			<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - KTX2 texture loader - webgl</div>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_loader_texture_ktx2.html
+			 * 分组：C｜模型资产和动画
+			 * 目标：学习 KTX2 压缩纹理为什么适合 Web 3D，以及不同压缩格式、mipmap、透明度和采样方式的差异。
+			 *
+			 * 阅读顺序：先找 loader 和模型路径，再看解码器/压缩纹理/环境贴图，最后看 AnimationMixer 或模型后处理。模型资产类案例要重点理解“资源怎么进来、进来后如何适配场景”。
+			 *
+			 * 核心知识点：
+			 * 1. KTX2Loader
+			 * 2. Basis Universal
+			 * 3. detectSupport
+			 * 4. flipY=false
+			 * 5. 多场景 scissor 渲染
+			 * 6. 压缩纹理格式对比
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const loader = new KTX2Loader()
+			 *     .setPath( 'textures/ktx2/' )
+			 *     .detectSupport( renderer );
+			 *   
+			 *   const texture = await loader.loadAsync( supported === false ? 'fail_load.ktx2' : path );
+			 *   const mesh = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { map: texture } ) );
+			 *   scene.add( mesh );
+			 *   scenes.push( scene );
+			 *   
+			 *   renderer.setScissor( left, bottom, width, height );
+			 *   renderer.render( scene, camera );
+			 *
+			 * 这些代码在做什么：
+			 * 1. 普通 PNG/JPG 下载后通常会解码成未压缩 GPU 纹理，占显存很大。
+			 * 2. KTX2 可以保存 GPU 友好的压缩纹理，减少显存和带宽压力。
+			 * 3. detectSupport 根据设备选择合适目标格式，例如 ETC、BC、ASTC 等。
+			 * 4. KTX2 纹理默认 flipY=false，和普通图片纹理的 UV 方向习惯不同，案例里专门处理了 UV。
+			 * 5. 案例用多个小场景和 scissor 区域在同一个 canvas 里渲染很多纹理对比。
+			 * 6. 它不是为了做漂亮画面，而是为了让你看清不同压缩格式和贴图设置的真实差别。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做移动端大贴图优化
+			 * 2. 做模型查看器和游戏资源优化
+			 * 3. 做纹理格式测试页
+			 * 4. 做图片墙/材质库预览
+			 * 5. 建立 KTX2/BasisU 纹理生产流水线
+			 *
+			 * 对应讲解文档：../官方案例讲解/C-模型资产动画/webgl_loader_texture_ktx2.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+
+			let canvas, renderer;
+
+			const scenes = [];
+
+			const sections = [
+				{
+					title: 'Uncompressed',
+					description: 'Uncompressed formats (rgba8, rgba16, rgba32) load as THREE.DataTexture objects.'
+						+ ' Lossless, easy to read/write, uncompressed on GPU, optionally compressed over the network.',
+					textures: [
+						{ path: '2d_rgba8.ktx2' },
+						{ path: '2d_rgba8_linear.ktx2' },
+						{ path: '2d_rgba16_linear.ktx2' },
+						{ path: '2d_rgba16unorm_linear.ktx2' },
+						{ path: '2d_rgba32_linear.ktx2' },
+						{ path: '2d_rgb9e5_linear.ktx2' },
+						{ path: '2d_r11g11b10_linear.ktx2' },
+					]
+				},
+				{
+					title: 'Compressed',
+					description: 'Compressed formats (ASTC, BCn, ...) load as THREE.CompressedTexture objects,'
+						+ ' reducing memory cost. Requires native support on the device GPU: no single compressed'
+						+ ' format is supported on every device.',
+					textures: [
+						{ path: '2d_astc4x4.ktx2' },
+						{ path: '2d_etc1.ktx2' },
+						{ path: '2d_etc2.ktx2' },
+						{ path: '2d_bc1.ktx2' },
+						{ path: '2d_bc3.ktx2' },
+						{ path: '2d_bc4.ktx2' },
+						{ path: '2d_bc5.ktx2' },
+						{ path: '2d_bc7.ktx2' },
+					]
+				},
+
+				{
+					title: 'Universal',
+					description: 'Basis Universal textures are specialized intermediate formats supporting fast'
+						+ ' runtime transcoding into other GPU texture compression formats. After transcoding,'
+						+ ' universal textures can be used on any device at reduced memory cost.',
+					textures: [
+						{ path: '2d_etc1s.ktx2' },
+						{ path: '2d_uastc.ktx2' },
+						{ path: '2d_uastc_hdr4x4.ktx2' },
+					]
+				},
+			];
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				canvas = document.getElementById( 'c' );
+
+				renderer = new THREE.WebGLRenderer( { canvas, antialias: true } );
+				renderer.setClearColor( 0xffffff, 1 );
+				renderer.setPixelRatio( window.devicePixelRatio );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：普通 PNG/JPG 下载后通常会解码成未压缩 GPU 纹理，占显存很大。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const loader = new KTX2Loader()
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：KTX2 可以保存 GPU 友好的压缩纹理，减少显存和带宽压力。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.setPath( 'textures/ktx2/' )
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：detectSupport 根据设备选择合适目标格式，例如 ETC、BC、ASTC 等。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.detectSupport( renderer );
+
+				const geometry = flipY( new THREE.PlaneGeometry( 1, 1 ) );
+
+				const content = document.getElementById( 'content' );
+
+				for ( const section of sections ) {
+
+					const sectionElement = document.createElement( 'section' );
+
+					const sectionHeader = document.createElement( 'h2' );
+					sectionHeader.textContent = section.title;
+					sectionElement.appendChild( sectionHeader );
+
+					const sectionDescription = document.createElement( 'p' );
+					sectionDescription.className = 'description';
+					sectionDescription.textContent = section.description;
+					sectionElement.appendChild( sectionDescription );
+
+					for ( const { path, supported } of section.textures ) {
+
+						const scene = new THREE.Scene();
+
+						// make a list item
+						const element = document.createElement( 'div' );
+						element.className = 'list-item';
+
+						const sceneElement = document.createElement( 'div' );
+						element.appendChild( sceneElement );
+
+						const labelElement = document.createElement( 'div' );
+						labelElement.innerText = 'file: ' + path;
+						element.appendChild( labelElement );
+
+						// the element that represents the area we want to render the scene
+						scene.userData.element = sceneElement;
+						sectionElement.appendChild( element );
+
+						const camera = new THREE.PerspectiveCamera( 50, 1, 1, 10 );
+						camera.position.z = 2;
+						scene.userData.camera = camera;
+
+						try {
+
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：KTX2 纹理默认 flipY=false，和普通图片纹理的 UV 方向习惯不同，案例里专门处理了 UV。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							const texture = await loader.loadAsync( supported === false ? 'fail_load.ktx2' : path );
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：案例用多个小场景和 scissor 区域在同一个 canvas 里渲染很多纹理对比。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							const mesh = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { map: texture } ) );
+
+							labelElement.innerText += '\ncolorSpace: ' + texture.colorSpace;
+
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：它不是为了做漂亮画面，而是为了让你看清不同压缩格式和贴图设置的真实差别。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							scene.add( mesh );
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：它不是为了做漂亮画面，而是为了让你看清不同压缩格式和贴图设置的真实差别。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							scenes.push( scene );
+
+						} catch ( e ) {
+
+							console.error( `Failed to load ${path}`, e );
+
+						}
+
+
+					}
+
+					content.appendChild( sectionElement );
+
+				}
+
+				renderer.setAnimationLoop( animate );
+
+
+			}
+
+			function updateSize() {
+
+				const width = canvas.clientWidth;
+				const height = canvas.clientHeight;
+
+				if ( canvas.width !== width || canvas.height !== height ) {
+
+					renderer.setSize( width, height, false );
+
+				}
+
+			}
+
+			/** Rewrite UVs for `flipY=false` textures. */
+			function flipY( geometry ) {
+
+				const uv = geometry.attributes.uv;
+
+				for ( let i = 0; i < uv.count; i ++ ) {
+
+					uv.setY( i, 1 - uv.getY( i ) );
+
+				}
+
+				return geometry;
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				updateSize();
+
+				canvas.style.transform = `translateY(${window.scrollY}px)`;
+
+				renderer.setClearColor( 0xffffff );
+				renderer.setScissorTest( false );
+				renderer.clear();
+
+				renderer.setClearColor( 0xe0e0e0 );
+				renderer.setScissorTest( true );
+
+				scenes.forEach( function ( scene ) {
+
+					// get the element that is a place holder for where we want to
+					// draw the scene
+					const element = scene.userData.element;
+
+					// get its position relative to the page's viewport
+					const rect = element.getBoundingClientRect();
+
+					// check if it's offscreen. If so skip it
+					if ( rect.bottom < 0 || rect.top > renderer.domElement.clientHeight ||
+						 rect.right < 0 || rect.left > renderer.domElement.clientWidth ) {
+
+						return; // it's off screen
+
+					}
+
+					// set the viewport
+					const width = rect.right - rect.left;
+					const height = rect.bottom - rect.top;
+					const left = rect.left;
+					const bottom = renderer.domElement.clientHeight - rect.bottom;
+
+					renderer.setViewport( left, bottom, width, height );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：它不是为了做漂亮画面，而是为了让你看清不同压缩格式和贴图设置的真实差别。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					renderer.setScissor( left, bottom, width, height );
+
+					const camera = scene.userData.camera;
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：它不是为了做漂亮画面，而是为了让你看清不同压缩格式和贴图设置的真实差别。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					renderer.render( scene, camera );
+
+				} );
+
+			}
+
+		</script>
+
+	</body>
+</html>

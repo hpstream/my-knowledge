@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - light probe</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - light probe">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_lightprobe.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_lightprobe.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - light probe
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_lightprobe.html
+			 * 分组：B｜光照材质
+			 * 目标：用官方案例理解 LightProbe 不是灯泡，也不是反射贴图；它是从四周环境里提取“哪里亮、哪里暗、偏什么颜色”的柔和补光数据。
+			 *
+			 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+			 *
+			 * 核心知识点：
+			 * 1. 先分清直接光、反射和环境补光三条路径
+			 * 2. LightProbe 不是点光源，没有距离衰减
+			 * 3. cubeTexture 同时被用作反射来源和 probe 数据来源
+			 * 4. envMap/roughness 主要控制表面反射
+			 * 5. LightProbe 主要影响暗面和哑光表面的环境受光
+			 * 6. 不会产生阴影
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   lightProbe = new THREE.LightProbe();
+			 *   scene.add( lightProbe );
+			 *   
+			 *   lightProbe.copy( LightProbeGenerator.fromCubeTexture( cubeTexture ) );
+			 *   lightProbe.intensity = API.enableLightProbe ? API.lightProbeIntensity : 0;
+			 *   
+			 *   gui.add( API, 'enableLightProbe' )
+			 *     .name( '补光开关' )
+			 *   
+			 *   gui.add( API, 'lightProbeIntensity', 0, 1, 0.02 )
+			 *     .name( '补光强度' )
+			 *   
+			 *   const material = new THREE.MeshStandardMaterial( {
+			 *     metalness: 0,
+			 *     roughness: 0,
+			 *     envMap: cubeTexture,
+			 *     envMapIntensity: API.envMapIntensity,
+			 *   } );
+			 *
+			 * 这些代码在做什么：
+			 * 1. new THREE.LightProbe 创建的不是一盏能看见位置的灯，它更像“这个点位的环境亮度记录器”。
+			 * 2. LightProbeGenerator.fromCubeTexture 会读取 cubeTexture 六个方向的画面，把复杂环境压缩成一份柔和补光数据。
+			 * 3. lightProbe.copy 把这份补光数据放进当前 LightProbe，材质受光时就能用它给暗面补一点来自环境的颜色。
+			 * 4. 同一个 cubeTexture 又被放进材质 envMap，这一条路径负责“表面能不能反射周围世界”。
+			 * 5. roughness 不会让物体自己发光，也不会制造环境；它只决定 envMap 反射是清楚还是模糊。
+			 * 6. 所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 环境补光
+			 * 2. AR 光照估计
+			 * 3. 室内低频照明
+			 * 4. 大场景区域光照
+			 * 5. 让移动角色在不同房间获得不同环境明暗
+			 * 6. 与 HDR environment 配合：envMap 管反射，LightProbe 管柔和环境受光
+			 *
+			 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_lightprobe.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+			import { LightProbeGenerator } from 'three/addons/lights/LightProbeGenerator.js';
+
+			import { LightProbeHelper } from 'three/addons/helpers/LightProbeHelper.js';
+
+			let mesh, renderer, scene, camera;
+
+			let gui;
+
+			let lightProbe;
+			let directionalLight;
+
+			// linear color space
+			/* THREE_TOPIC_DETAIL_NOTE_START
+			 * 学习注释：这里的 API 不是浏览器接口，也不是 Three.js 内置对象；它只是官方案例自己建的参数对象，专门给右上角 GUI 面板读写。
+			 * THREE_TOPIC_DETAIL_NOTE_END */
+			const API = {
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：enableLightProbe 是我给本地学习版加的补光开关。关闭后 LightProbe 强度会变成 0，但方向光和 envMap 仍然保留，方便只看环境补光差别。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				enableLightProbe: true,
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：LightProbe 的初始强度。数值越大，环境补光越强；它主要影响暗面和哑光受光，不负责投影。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				lightProbeIntensity: 1.0,
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：directionalLightIntensity 就是方向光强度。方向光像太阳，有明确方向；这里 0.6 是案例给的初始亮度。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				directionalLightIntensity: 0.6,
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：envMapIntensity 是环境反射强度。它主要影响光滑表面看到周围环境的反射强弱。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				envMapIntensity: 1
+			};
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				// renderer
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				// tone mapping
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：NoToneMapping 表示关闭色调映射。这个案例为了比较 LightProbe、方向光和 envMap 的原始强度，没有让 ACES/Reinhard 之类算法再压缩亮度。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				renderer.toneMapping = THREE.NoToneMapping;
+
+
+				// scene
+				scene = new THREE.Scene();
+
+				// camera
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 1, 1000 );
+				camera.position.set( 0, 0, 30 );
+
+				// controls
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.addEventListener( 'change', render );
+				controls.minDistance = 10;
+				controls.maxDistance = 50;
+				controls.enablePan = false;
+
+				// probe
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：new THREE.LightProbe 创建的不是一盏能看见位置的灯，它更像“这个点位的环境亮度记录器”。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				lightProbe = new THREE.LightProbe();
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：LightProbeGenerator.fromCubeTexture 会读取 cubeTexture 六个方向的画面，把复杂环境压缩成一份柔和补光数据。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.add( lightProbe );
+
+				// light
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：创建方向光。第一个参数是白色，第二个参数来自 API.directionalLightIntensity，也就是方向光初始强度。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				directionalLight = new THREE.DirectionalLight( 0xffffff, API.directionalLightIntensity );
+				directionalLight.position.set( 10, 10, 10 );
+				scene.add( directionalLight );
+
+				// envmap
+				const genCubeUrls = function ( prefix, postfix ) {
+
+					return [
+						prefix + 'px' + postfix, prefix + 'nx' + postfix,
+						prefix + 'py' + postfix, prefix + 'ny' + postfix,
+						prefix + 'pz' + postfix, prefix + 'nz' + postfix
+					];
+
+				};
+
+				const urls = genCubeUrls( 'textures/cube/pisa/', '.png' );
+
+				new THREE.CubeTextureLoader().load( urls, function ( cubeTexture ) {
+
+					scene.background = cubeTexture;
+
+					/* THREE_TOPIC_DETAIL_NOTE_START
+					 * 学习注释：从六面 cubeTexture 里提取环境补光数据，再复制到 lightProbe。注意这不是把图片贴到物体上，而是生成一份补光信息。
+					 * THREE_TOPIC_DETAIL_NOTE_END */
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：lightProbe.copy 把这份补光数据放进当前 LightProbe，材质受光时就能用它给暗面补一点来自环境的颜色。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					lightProbe.copy( LightProbeGenerator.fromCubeTexture( cubeTexture ) );
+					/* THREE_TOPIC_DETAIL_NOTE_START
+					 * 学习注释：根据补光开关决定 LightProbe 是否生效：开关打开使用滑块强度，关闭时强度归零。
+					 * THREE_TOPIC_DETAIL_NOTE_END */
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：同一个 cubeTexture 又被放进材质 envMap，这一条路径负责“表面能不能反射周围世界”。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					lightProbe.intensity = API.enableLightProbe ? API.lightProbeIntensity : 0;
+					/* THREE_TOPIC_DETAIL_NOTE_START
+					 * 学习注释：LightProbe 的位置不参与这个案例的实际光照计算；这里移动位置主要是为了让 LightProbeHelper 显示在左侧，方便你看见它。
+					 * THREE_TOPIC_DETAIL_NOTE_END */
+					lightProbe.position.set( - 10, 0, 0 ); // position not used in scene lighting calculations (helper honors the position, however)
+
+					const geometry = new THREE.SphereGeometry( 5, 64, 32 );
+					//const geometry = new THREE.TorusKnotGeometry( 4, 1.5, 256, 32, 2, 3 );
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const material = new THREE.MeshStandardMaterial( {
+						color: 0xffffff,
+						metalness: 0,
+						roughness: 0,
+						envMap: cubeTexture,
+						/* THREE_TOPIC_DETAIL_NOTE_START
+						 * 学习注释：把 GUI 参数里的 envMapIntensity 交给材质，控制这颗球表面的环境反射强度。
+						 * THREE_TOPIC_DETAIL_NOTE_END */
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						envMapIntensity: API.envMapIntensity,
+					} );
+
+					// mesh
+					mesh = new THREE.Mesh( geometry, material );
+					scene.add( mesh );
+
+					// helper
+					const helper = new LightProbeHelper( lightProbe, 1 );
+					scene.add( helper );
+
+					render();
+
+				} );
+
+
+				// gui
+				gui = new GUI( { title: 'Intensity' } );
+
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：创建补光开关，只控制 LightProbe 是否参与环境补光，不关闭方向光，也不关闭 envMap 反射。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：roughness 不会让物体自己发光，也不会制造环境；它只决定 envMap 反射是清楚还是模糊。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				gui.add( API, 'enableLightProbe' )
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.name( '补光开关' )
+					.onChange( function () {
+
+						lightProbe.intensity = API.enableLightProbe ? API.lightProbeIntensity : 0; render();
+
+					} );
+
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：创建补光强度滑块：范围 0 到 1，每次拖动按 0.02 递增。它改的是 API.lightProbeIntensity。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				gui.add( API, 'lightProbeIntensity', 0, 1, 0.02 )
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：所以这个案例故意把 LightProbe 和 envMap 放在一起：你要观察它们分别影响“暗面受光”和“表面反射”。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					.name( '补光强度' )
+					.onChange( function () {
+
+						lightProbe.intensity = API.enableLightProbe ? API.lightProbeIntensity : 0; render();
+
+					} );
+
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：创建 directional light 滑块。它控制方向光强度，也就是太阳/主光有多亮。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				gui.add( API, 'directionalLightIntensity', 0, 1, 0.02 )
+					.name( 'directional light' )
+					.onChange( function () {
+
+						/* THREE_TOPIC_DETAIL_NOTE_START
+						 * 学习注释：滑块变化后，把 API.directionalLightIntensity 同步给方向光的 intensity，然后重画画面。
+						 * THREE_TOPIC_DETAIL_NOTE_END */
+						directionalLight.intensity = API.directionalLightIntensity; render();
+
+					} );
+
+				/* THREE_TOPIC_DETAIL_NOTE_START
+				 * 学习注释：创建 envMap 滑块。它控制材质环境反射强度，不是控制 LightProbe。
+				 * THREE_TOPIC_DETAIL_NOTE_END */
+				gui.add( API, 'envMapIntensity', 0, 1, 0.02 )
+					.name( 'envMap' )
+					.onChange( function () {
+
+						/* THREE_TOPIC_DETAIL_NOTE_START
+						 * 学习注释：滑块变化后，只改变球体材质的 envMapIntensity，所以你主要看表面反射强弱，而不是阴影变化。
+						 * THREE_TOPIC_DETAIL_NOTE_END */
+						mesh.material.envMapIntensity = API.envMapIntensity; render();
+
+					} );
+
+				// listener
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				render();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

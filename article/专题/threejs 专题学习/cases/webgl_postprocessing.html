@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - postprocessing</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - postprocessing">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_postprocessing.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_postprocessing.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_postprocessing.html
+			 * 分组：E｜性能大量对象和后处理
+			 * 目标：学习后处理管线如何把场景先渲染到纹理，再通过多个 pass 做屏幕空间效果。
+			 *
+			 * 阅读顺序：先找 InstancedMesh / Points / EffectComposer，再看每帧更新的数据量。性能类案例要重点区分 CPU 创建对象、GPU draw call、纹理/后处理成本。
+			 *
+			 * 核心知识点：
+			 * 1. EffectComposer 管理多个 pass
+			 * 2. RenderPass 先渲染原始场景
+			 * 3. ShaderPass 对渲染结果做图像处理
+			 * 4. pass 顺序影响最终画面
+			 * 5. composer.render 替代 renderer.render
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   composer = new EffectComposer( renderer );
+			 *   composer.addPass( new RenderPass( scene, camera ) );
+			 *   
+			 *   const effect1 = new ShaderPass( DotScreenShader );
+			 *   effect1.uniforms[ 'scale' ].value = 4;
+			 *   composer.addPass( effect1 );
+			 *   
+			 *   const effect2 = new ShaderPass( RGBShiftShader );
+			 *   effect2.uniforms[ 'amount' ].value = 0.0015;
+			 *   composer.addPass( effect2 );
+			 *   
+			 *   const effect3 = new OutputPass();
+			 *   composer.addPass( effect3 );
+			 *   
+			 *   composer.render();
+			 *
+			 * 这些代码在做什么：
+			 * 1. RenderPass 把三维场景渲染成一张中间纹理。
+			 * 2. ShaderPass 读取上一张纹理，再输出处理后的画面。
+			 * 3. 多个 pass 像流水线一样串联，顺序不一样效果也不一样。
+			 * 4. 用了 composer 后，动画循环里通常调用 composer.render，而不是 renderer.render。
+			 * 5. 后处理是屏幕空间效果，不能改变真实灯光和几何。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 描边、高亮、泛光
+			 * 2. 景深、噪声、胶片效果
+			 * 3. SSAO、SSR
+			 * 4. 游戏画面风格化
+			 * 5. 编辑器选中态
+			 *
+			 * 对应讲解文档：../官方案例讲解/E-性能大量对象后处理/webgl_postprocessing.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+			import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+			import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+			import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
+			import { DotScreenShader } from 'three/addons/shaders/DotScreenShader.js';
+			import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+			let camera, renderer, composer;
+			let object;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				//
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 1000 );
+				camera.position.z = 400;
+
+				const scene = new THREE.Scene();
+				scene.fog = new THREE.Fog( 0x000000, 1, 1000 );
+
+				object = new THREE.Object3D();
+				scene.add( object );
+
+				const geometry = new THREE.SphereGeometry( 1, 4, 4 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				for ( let i = 0; i < 100; i ++ ) {
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.position.set( Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5 ).normalize();
+					mesh.position.multiplyScalar( Math.random() * 400 );
+					mesh.rotation.set( Math.random() * 2, Math.random() * 2, Math.random() * 2 );
+					mesh.scale.x = mesh.scale.y = mesh.scale.z = Math.random() * 50;
+					object.add( mesh );
+
+				}
+
+				scene.add( new THREE.AmbientLight( 0xcccccc ) );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 3 );
+				light.position.set( 1, 1, 1 );
+				scene.add( light );
+
+				// postprocessing
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：RenderPass 把三维场景渲染成一张中间纹理。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer = new EffectComposer( renderer );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：ShaderPass 读取上一张纹理，再输出处理后的画面。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer.addPass( new RenderPass( scene, camera ) );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：多个 pass 像流水线一样串联，顺序不一样效果也不一样。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const effect1 = new ShaderPass( DotScreenShader );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：用了 composer 后，动画循环里通常调用 composer.render，而不是 renderer.render。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				effect1.uniforms[ 'scale' ].value = 4;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer.addPass( effect1 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const effect2 = new ShaderPass( RGBShiftShader );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				effect2.uniforms[ 'amount' ].value = 0.0015;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer.addPass( effect2 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const effect3 = new OutputPass();
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer.addPass( effect3 );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				composer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				object.rotation.x += 0.005;
+				object.rotation.y += 0.01;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：后处理是屏幕空间效果，不能改变真实灯光和几何。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				composer.render();
+
+			}
+
+		</script>
+
+	</body>
+</html>

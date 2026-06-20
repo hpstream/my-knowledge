@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - cameras</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - cameras">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_camera.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_camera.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			b {
+				color: lightgreen;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - cameras<br/>
+		<b>O</b> orthographic <b>P</b> perspective
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_camera.html
+			 * 分组：A｜观察调试
+			 * 目标：学习相机视锥、near/far 裁剪面、透视/正交切换，以及为什么 CameraHelper 能帮你看见“另一台相机在拍哪里”。
+			 *
+			 * 阅读顺序：先找 camera / controls / helper，再看 resize 和每帧 controls.update。观察调试类案例的重点不是画面多复杂，而是你能不能判断相机、坐标、尺寸和包围范围是否正确。
+			 *
+			 * 核心知识点：
+			 * 1. PerspectiveCamera 会近大远小
+			 * 2. OrthographicCamera 不会近大远小
+			 * 3. CameraHelper 显示相机视锥
+			 * 4. setScissorTest 做左右分屏渲染
+			 * 5. resize 时相机参数必须 updateProjectionMatrix
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   cameraPerspective = new THREE.PerspectiveCamera( 50, 0.5 * aspect, 150, 1000 );
+			 *   cameraPerspectiveHelper = new THREE.CameraHelper( cameraPerspective );
+			 *   scene.add( cameraPerspectiveHelper );
+			 *   
+			 *   cameraOrtho = new THREE.OrthographicCamera( 0.5 * frustumSize * aspect / - 2, 0.5 * frustumSize * aspect / 2, frustumSize / 2, frustumSize / - 2, 150, 1000 );
+			 *   cameraOrthoHelper = new THREE.CameraHelper( cameraOrtho );
+			 *   scene.add( cameraOrthoHelper );
+			 *
+			 * 这些代码在做什么：
+			 * 1. PerspectiveCamera 的 fov、aspect、near、far 共同决定可见的锥形区域。
+			 * 2. OrthographicCamera 用 left/right/top/bottom 定义盒状可视区域，适合 CAD、编辑器和等距视角。
+			 * 3. CameraHelper 把不可见的相机视锥画出来，调 shadow camera 和编辑器相机时很有价值。
+			 * 4. near 太大时近处物体会被裁掉，far 太小时远处物体会消失。
+			 * 5. 窗口尺寸变化后不调用 updateProjectionMatrix，相机内部投影矩阵仍是旧比例。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 三维编辑器双视图
+			 * 2. 相机调试工具
+			 * 3. 阴影相机调试
+			 * 4. CAD/工业模型正交视图
+			 * 5. 游戏过场镜头可视化
+			 *
+			 * 对应讲解文档：../官方案例讲解/A-观察调试/webgl_camera.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let SCREEN_WIDTH = window.innerWidth;
+			let SCREEN_HEIGHT = window.innerHeight;
+			let aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+
+			let container, stats;
+			let camera, scene, renderer, mesh;
+			let cameraRig, activeCamera, activeHelper;
+			let cameraPerspective, cameraOrtho;
+			let cameraPerspectiveHelper, cameraOrthoHelper;
+			const frustumSize = 600;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				scene = new THREE.Scene();
+
+				//
+
+				camera = new THREE.PerspectiveCamera( 50, 0.5 * aspect, 1, 10000 );
+				camera.position.z = 2500;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：PerspectiveCamera 的 fov、aspect、near、far 共同决定可见的锥形区域。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				cameraPerspective = new THREE.PerspectiveCamera( 50, 0.5 * aspect, 150, 1000 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：OrthographicCamera 用 left/right/top/bottom 定义盒状可视区域，适合 CAD、编辑器和等距视角。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				cameraPerspectiveHelper = new THREE.CameraHelper( cameraPerspective );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：CameraHelper 把不可见的相机视锥画出来，调 shadow camera 和编辑器相机时很有价值。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.add( cameraPerspectiveHelper );
+
+				//
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：near 太大时近处物体会被裁掉，far 太小时远处物体会消失。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				cameraOrtho = new THREE.OrthographicCamera( 0.5 * frustumSize * aspect / - 2, 0.5 * frustumSize * aspect / 2, frustumSize / 2, frustumSize / - 2, 150, 1000 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：窗口尺寸变化后不调用 updateProjectionMatrix，相机内部投影矩阵仍是旧比例。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				cameraOrthoHelper = new THREE.CameraHelper( cameraOrtho );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：窗口尺寸变化后不调用 updateProjectionMatrix，相机内部投影矩阵仍是旧比例。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.add( cameraOrthoHelper );
+
+				//
+
+				activeCamera = cameraPerspective;
+				activeHelper = cameraPerspectiveHelper;
+
+
+				// counteract different front orientation of cameras vs rig
+
+				cameraOrtho.rotation.y = Math.PI;
+				cameraPerspective.rotation.y = Math.PI;
+
+				cameraRig = new THREE.Group();
+
+				cameraRig.add( cameraPerspective );
+				cameraRig.add( cameraOrtho );
+
+				scene.add( cameraRig );
+
+				//
+
+				mesh = new THREE.Mesh(
+					new THREE.SphereGeometry( 100, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, wireframe: true } )
+				);
+				scene.add( mesh );
+
+				const mesh2 = new THREE.Mesh(
+					new THREE.SphereGeometry( 50, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x00ff00, wireframe: true } )
+				);
+				mesh2.position.y = 150;
+				mesh.add( mesh2 );
+
+				const mesh3 = new THREE.Mesh(
+					new THREE.SphereGeometry( 5, 16, 8 ),
+					new THREE.MeshBasicMaterial( { color: 0x0000ff, wireframe: true } )
+				);
+				mesh3.position.z = 150;
+				cameraRig.add( mesh3 );
+
+				//
+
+				const geometry = new THREE.BufferGeometry();
+				const vertices = [];
+
+				for ( let i = 0; i < 10000; i ++ ) {
+
+					vertices.push( THREE.MathUtils.randFloatSpread( 2000 ) ); // x
+					vertices.push( THREE.MathUtils.randFloatSpread( 2000 ) ); // y
+					vertices.push( THREE.MathUtils.randFloatSpread( 2000 ) ); // z
+
+				}
+
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+
+				const particles = new THREE.Points( geometry, new THREE.PointsMaterial( { color: 0x888888 } ) );
+				scene.add( particles );
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+				renderer.setAnimationLoop( animate );
+				container.appendChild( renderer.domElement );
+
+				renderer.setScissorTest( true );
+
+				//
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+				document.addEventListener( 'keydown', onKeyDown );
+
+			}
+
+			//
+
+			function onKeyDown( event ) {
+
+				switch ( event.keyCode ) {
+
+					case 79: /*O*/
+
+						activeCamera = cameraOrtho;
+						activeHelper = cameraOrthoHelper;
+
+						break;
+
+					case 80: /*P*/
+
+						activeCamera = cameraPerspective;
+						activeHelper = cameraPerspectiveHelper;
+
+						break;
+
+				}
+
+			}
+
+			//
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				SCREEN_WIDTH = window.innerWidth;
+				SCREEN_HEIGHT = window.innerHeight;
+				aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+
+				renderer.setSize( SCREEN_WIDTH, SCREEN_HEIGHT );
+
+				camera.aspect = 0.5 * aspect;
+				camera.updateProjectionMatrix();
+
+				cameraPerspective.aspect = 0.5 * aspect;
+				cameraPerspective.updateProjectionMatrix();
+
+				cameraOrtho.left = - 0.5 * frustumSize * aspect / 2;
+				cameraOrtho.right = 0.5 * frustumSize * aspect / 2;
+				cameraOrtho.top = frustumSize / 2;
+				cameraOrtho.bottom = - frustumSize / 2;
+				cameraOrtho.updateProjectionMatrix();
+
+			}
+
+			//
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				render();
+				stats.update();
+
+			}
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+
+			function render() {
+
+				const r = Date.now() * 0.0005;
+
+				mesh.position.x = 700 * Math.cos( r );
+				mesh.position.z = 700 * Math.sin( r );
+				mesh.position.y = 700 * Math.sin( r );
+
+				mesh.children[ 0 ].position.x = 70 * Math.cos( 2 * r );
+				mesh.children[ 0 ].position.z = 70 * Math.sin( r );
+
+				if ( activeCamera === cameraPerspective ) {
+
+					cameraPerspective.fov = 35 + 30 * Math.sin( 0.5 * r );
+					cameraPerspective.far = mesh.position.length();
+					cameraPerspective.updateProjectionMatrix();
+
+					cameraPerspectiveHelper.update();
+					cameraPerspectiveHelper.visible = true;
+
+					cameraOrthoHelper.visible = false;
+
+				} else {
+
+					cameraOrtho.far = mesh.position.length();
+					cameraOrtho.updateProjectionMatrix();
+
+					cameraOrthoHelper.update();
+					cameraOrthoHelper.visible = true;
+
+					cameraPerspectiveHelper.visible = false;
+
+				}
+
+				cameraRig.lookAt( mesh.position );
+
+				//
+
+				activeHelper.visible = false;
+
+				renderer.setClearColor( 0x000000, 1 );
+				renderer.setScissor( 0, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT );
+				renderer.setViewport( 0, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT );
+				renderer.render( scene, activeCamera );
+
+				//
+
+				activeHelper.visible = true;
+
+				renderer.setClearColor( 0x111111, 1 );
+				renderer.setScissor( SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT );
+				renderer.setViewport( SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT );
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

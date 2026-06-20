@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - instancing - dynamic</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - instancing - dynamic">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_instancing_dynamic.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_instancing_dynamic.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - instancing - dynamic<br/>
+			Based on <a href="https://oosmoxiecode.com/archive/js_webgl/cubescape/" target="_blank" rel="noopener">Cubescape</a>
+			by <a href="https://github.com/oosmoxiecode" target="_blank" rel="noopener">oosmoxiecode</a>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_instancing_dynamic.html
+			 * 分组：E｜性能大量对象和后处理
+			 * 目标：学习实例矩阵每帧变化时如何更新 instanceMatrix，并理解 DynamicDrawUsage 的意义。
+			 *
+			 * 阅读顺序：先找 InstancedMesh / Points / EffectComposer，再看每帧更新的数据量。性能类案例要重点区分 CPU 创建对象、GPU draw call、纹理/后处理成本。
+			 *
+			 * 核心知识点：
+			 * 1. 静态 instancing 只初始化一次 matrix
+			 * 2. 动态 instancing 每帧 setMatrixAt
+			 * 3. instanceMatrix.needsUpdate 通知 GPU 上传
+			 * 4. DynamicDrawUsage 表示 buffer 会频繁变
+			 * 5. 动态更新比静态更贵但仍比大量 Mesh 便宜
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   mesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+			 *   
+			 *   for ( let i = 0; i < mesh.count; i ++ ) {
+			 *     dummy.position.set( offset - x, 0, offset - z );
+			 *     dummy.updateMatrix();
+			 *     mesh.setMatrixAt( i, dummy.matrix );
+			 *   }
+			 *   
+			 *   mesh.instanceMatrix.needsUpdate = true;
+			 *
+			 * 这些代码在做什么：
+			 * 1. DynamicDrawUsage 是给 WebGL 的提示：这个 buffer 会经常被改。
+			 * 2. dummy Object3D 用来方便生成 position/rotation/scale 对应的矩阵。
+			 * 3. setMatrixAt 只改 CPU 侧数据，needsUpdate 才会触发上传。
+			 * 4. 如果只改一部分实例，也要考虑上传成本。
+			 * 5. 大量动态实例适合模拟鱼群、弹幕、运动粒子等重复对象。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 鱼群/鸟群
+			 * 2. 大规模弹幕
+			 * 3. 运动传感点
+			 * 4. 粒子替代 mesh
+			 * 5. 动态城市交通可视化
+			 *
+			 * 对应讲解文档：../官方案例讲解/E-性能大量对象后处理/webgl_instancing_dynamic.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+			import TWEEN from 'three/addons/libs/tween.module.js';
+
+			let camera, scene, renderer, timer, mesh;
+
+			const amount = 100;
+
+			const count = Math.pow( amount, 2 );
+			const dummy = new THREE.Object3D();
+
+			const seeds = [];
+			const baseColors = [];
+
+			const color = new THREE.Color();
+			const colors = [ new THREE.Color( 0x00ffff ), new THREE.Color( 0xffff00 ), new THREE.Color( 0xff00ff ) ];
+			const animation = { t: 0 };
+			let currentColorIndex = 0;
+			let nextColorIndex = 1;
+
+			const maxDistance = 75;
+			const cameraTarget = new THREE.Vector3();
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.toneMapping = THREE.NeutralToneMapping;
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 10, 10, 10 );
+				camera.lookAt( 0, 0, 0 );
+
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xadd8e6 );
+				scene.environment = pmremGenerator.fromScene( new RoomEnvironment(), 0.04 ).texture;
+
+				timer = new THREE.Timer();
+				timer.connect( document );
+
+				const loader = new THREE.TextureLoader();
+				const texture = loader.load( 'textures/edge3.jpg' );
+				texture.colorSpace = THREE.SRGBColorSpace;
+
+				const geometry = new THREE.BoxGeometry();
+				const material = new THREE.MeshStandardMaterial( { map: texture } );
+
+				mesh = new THREE.InstancedMesh( geometry, material, count );
+				mesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+				scene.add( mesh );
+
+				let i = 0;
+				const offset = ( amount - 1 ) / 2;
+
+				for ( let x = 0; x < amount; x ++ ) {
+
+					for ( let z = 0; z < amount; z ++ ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：dummy Object3D 用来方便生成 position/rotation/scale 对应的矩阵。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						dummy.position.set( offset - x, 0, offset - z );
+						dummy.scale.set( 1, 2, 1 );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：setMatrixAt 只改 CPU 侧数据，needsUpdate 才会触发上传。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						dummy.updateMatrix();
+
+						color.setHSL( 1, 0.5 + ( Math.random() * 0.5 ), 0.5 + ( Math.random() * 0.5 ) );
+						baseColors.push( color.getHex() );
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：如果只改一部分实例，也要考虑上传成本。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						mesh.setMatrixAt( i, dummy.matrix );
+						mesh.setColorAt( i, color.multiply( colors[ 0 ] ) );
+
+						i ++;
+
+						seeds.push( Math.random() );
+
+					}
+
+				}
+
+				//
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				setInterval( startTween, 3000 );
+
+			}
+
+			function startTween() {
+
+				// tween for animating color transition
+			
+				new TWEEN.Tween( animation )
+					.to( {
+						t: 1
+					}, 2000 )
+					.easing( TWEEN.Easing.Sinusoidal.In )
+					.onComplete( () => {
+
+						animation.t = 0;
+
+						currentColorIndex = nextColorIndex;
+						nextColorIndex ++;
+
+						if ( nextColorIndex >= colors.length ) nextColorIndex = 0;
+
+					} )
+					.start();
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			//
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				timer.update();
+
+				const time = timer.getElapsed();
+
+				TWEEN.update();
+
+				// animate camera
+
+				camera.position.x = Math.sin( time / 4 ) * 10;
+				camera.position.z = Math.cos( time / 4 ) * 10;
+				camera.position.y = 8 + Math.cos( time / 2 ) * 2;
+
+				cameraTarget.x = Math.sin( time / 4 ) * - 8;
+				cameraTarget.z = Math.cos( time / 2 ) * - 8;
+
+				camera.lookAt( cameraTarget );
+
+				camera.up.x = Math.sin( time / 400 );
+
+				// animate instance positions and colors
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：DynamicDrawUsage 是给 WebGL 的提示：这个 buffer 会经常被改。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				for ( let i = 0; i < mesh.count; i ++ ) {
+
+					mesh.getMatrixAt( i, dummy.matrix );
+					dummy.matrix.decompose( dummy.position, dummy.quaternion, dummy.scale );
+
+					dummy.position.y = Math.abs( Math.sin( ( time + seeds[ i ] ) * 2 + seeds[ i ] ) );
+
+					dummy.updateMatrix();
+
+					mesh.setMatrixAt( i, dummy.matrix );
+
+					// colors
+
+					if ( animation.t > 0 ) {
+
+						const currentColor = colors[ currentColorIndex ];
+						const nextColor = colors[ nextColorIndex ];
+			
+						const f = dummy.position.length() / maxDistance;
+
+						if ( f <= animation.t ) {
+
+							color.set( baseColors[ i ] ).multiply( nextColor );
+
+						} else {
+
+							color.set( baseColors[ i ] ).multiply( currentColor );
+
+						}
+
+						mesh.setColorAt( i, color );
+
+					}
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：大量动态实例适合模拟鱼群、弹幕、运动粒子等重复对象。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				mesh.instanceMatrix.needsUpdate = true;
+				if ( animation.t > 0 ) mesh.instanceColor.needsUpdate = true;
+			
+				mesh.computeBoundingSphere();
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - animation - keyframes</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - animation - keyframes">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_animation_keyframes.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_animation_keyframes.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #e2e0e0;
+				color: #000;
+			}
+
+			a {
+				color: #2983ff;
+			}
+		</style>
+	</head>
+
+	<body>
+
+		<div id="container"></div>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - animation - keyframes<br/>
+			Model: <a href="https://artstation.com/artwork/1AGwX" target="_blank" rel="noopener">Littlest Tokyo</a> by
+			<a href="https://artstation.com/glenatron" target="_blank" rel="noopener">Glen Fox</a>, CC Attribution.
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_animation_keyframes.html
+			 * 分组：C｜模型资产和动画
+			 * 目标：学习 glTF 模型自带动画如何通过 AnimationMixer 播放，并用 deltaTime 保持不同帧率下速度一致。
+			 *
+			 * 阅读顺序：先找 loader 和模型路径，再看解码器/压缩纹理/环境贴图，最后看 AnimationMixer 或模型后处理。模型资产类案例要重点理解“资源怎么进来、进来后如何适配场景”。
+			 *
+			 * 核心知识点：
+			 * 1. GLTFLoader 加载动画
+			 * 2. DRACOLoader 压缩模型
+			 * 3. AnimationMixer
+			 * 4. clipAction
+			 * 5. deltaTime
+			 * 6. 环境光照和 PMREM
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   loader.load( 'models/gltf/LittlestTokyo.glb', function ( gltf ) {
+			 *     const model = gltf.scene;
+			 *     scene.add( model );
+			 *   
+			 *     mixer = new THREE.AnimationMixer( model );
+			 *     mixer.clipAction( gltf.animations[ 0 ] ).play();
+			 *   } );
+			 *   
+			 *   timer.update();
+			 *   const delta = timer.getDelta();
+			 *   mixer.update( delta );
+			 *
+			 * 这些代码在做什么：
+			 * 1. glTF 文件不只保存模型，也可以保存动画剪辑。
+			 * 2. AnimationMixer 绑定到模型根节点，负责计算动画对模型层级的影响。
+			 * 3. clipAction 把一个 AnimationClip 变成可播放、暂停、调速、混合的动作。
+			 * 4. play() 只是开始播放，真正推进动画的是每帧 mixer.update(delta)。
+			 * 5. deltaTime 表示上一帧到这一帧经过的真实时间，避免高刷屏动画变快、低帧率动画变慢。
+			 * 6. 案例还用 PMREM 环境贴图，让模型材质在动画中仍有稳定真实的反射和光照。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 播放角色、机械、城市、产品演示动画
+			 * 2. 做模型查看器里的动画预览
+			 * 3. 做数字孪生设备运转动画
+			 * 4. 做游戏 NPC 或场景循环动画
+			 * 5. 扩展成动画暂停、倍速、时间轴拖动
+			 *
+			 * 对应讲解文档：../官方案例讲解/C-模型资产动画/webgl_animation_keyframes.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { Sky } from 'three/addons/objects/Sky.js';
+
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+			let mixer;
+
+			const timer = new THREE.Timer();
+			timer.connect( document );
+			const container = document.getElementById( 'container' );
+
+			const stats = new Stats();
+			container.appendChild( stats.dom );
+
+			const renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			container.appendChild( renderer.domElement );
+
+			const scene = new THREE.Scene();
+
+			// Sky
+
+			const sky = new Sky();
+			sky.scale.setScalar( 10000 );
+			scene.add( sky );
+
+			const uniforms = sky.material.uniforms;
+			uniforms[ 'turbidity' ].value = 0;
+			uniforms[ 'rayleigh' ].value = 3;
+			uniforms[ 'mieDirectionalG' ].value = 0.7;
+			uniforms[ 'cloudElevation' ].value = 1;
+			uniforms[ 'sunPosition' ].value.set( - 0.8, 0.19, 0.56 ); // elevation: 11, azimuth: -55
+
+			const pmremGenerator = new THREE.PMREMGenerator( renderer );
+			const environment = pmremGenerator.fromScene( sky ).texture;
+			scene.environment = environment;
+
+			const camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 1, 100 );
+			camera.position.set( 5, 2, 8 );
+
+			const controls = new OrbitControls( camera, renderer.domElement );
+			controls.enableDamping = true;
+			controls.target.set( 0, 0.7, 0 );
+			controls.update();
+
+			const dracoLoader = new DRACOLoader();
+			dracoLoader.setDecoderPath( 'jsm/libs/draco/gltf/' );
+
+			const loader = new GLTFLoader();
+			loader.setDRACOLoader( dracoLoader );
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：glTF 文件不只保存模型，也可以保存动画剪辑。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			loader.load( 'models/gltf/LittlestTokyo.glb', function ( gltf ) {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：AnimationMixer 绑定到模型根节点，负责计算动画对模型层级的影响。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const model = gltf.scene;
+				model.position.set( 1, 1, 0 );
+				model.scale.set( 0.01, 0.01, 0.01 );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：clipAction 把一个 AnimationClip 变成可播放、暂停、调速、混合的动作。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				scene.add( model );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：play() 只是开始播放，真正推进动画的是每帧 mixer.update(delta)。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				mixer = new THREE.AnimationMixer( model );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：deltaTime 表示上一帧到这一帧经过的真实时间，避免高刷屏动画变快、低帧率动画变慢。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				mixer.clipAction( gltf.animations[ 0 ] ).play();
+
+				renderer.setAnimationLoop( animate );
+
+			}, undefined, function ( e ) {
+
+				console.error( e );
+
+			} );
+
+			window.onresize = function () {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			};
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：案例还用 PMREM 环境贴图，让模型材质在动画中仍有稳定真实的反射和光照。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				timer.update();
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：案例还用 PMREM 环境贴图，让模型材质在动画中仍有稳定真实的反射和光照。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const delta = timer.getDelta();
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：案例还用 PMREM 环境贴图，让模型材质在动画中仍有稳定真实的反射和光照。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				mixer.update( delta );
+
+				controls.update();
+
+				stats.update();
+
+				renderer.render( scene, camera );
+
+			}
+
+
+		</script>
+
+	</body>
+
+</html>

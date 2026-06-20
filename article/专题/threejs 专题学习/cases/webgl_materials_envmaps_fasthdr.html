@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>threejs webgl - materials - equirectangular exr image based lighting</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<meta property="og:title" content="threejs webgl - materials - equirectangular exr image based lighting">
+	<meta property="og:type" content="website">
+	<meta property="og:url" content="https://threejs.org/examples/webgl_materials_envmaps_fasthdr.html">
+	<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_materials_envmaps_fasthdr.jpg">
+	<link type="text/css" rel="stylesheet" href="main.css">
+</head>
+
+<body>
+
+	<div id="container"></div>
+	<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">threejs</a> - Example of <a
+			href="https://cloud.needle.tools/hdris" target="_blank">FastHDR</a>, loading 10x faster and using 95% less GPU
+		memory than EXR.<br />Photography by <a href="https://cloud.needle.tools/hdris?img=Ballroom" target="_blank"
+			rel="noopener">Sergej Majboroda</a></div>
+
+	<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+	<script type="module">
+
+
+		/* THREE_TOPIC_LEARNING_NOTES_START
+		 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+		 * 案例：webgl_materials_envmaps_fasthdr.html
+		 * 分组：B｜光照材质
+		 * 目标：学习预过滤好的 PMREM KTX2 环境图如何跳过运行时 PMREM 生成，减少加载时间和 GPU 内存。
+		 *
+		 * 阅读顺序：先找 renderer 的 color/toneMapping/output 设置，再找 light / material / environment，最后看 GUI 参数如何改变光照或材质。光照材质类案例要重点观察“哪个参数改变了亮度、阴影、反射、透明或贴图清晰度”。
+		 *
+		 * 核心知识点：
+		 * 1. FastHDR 文件已经是 PMREM 格式
+		 * 2. KTX2Loader 加载压缩环境纹理
+		 * 3. CubeUVReflectionMapping 表示可直接作为 environment
+		 * 4. scene.backgroundBlurriness 单独控制背景模糊
+		 * 5. 不同材质球展示环境对玻璃、粗糙金属、光滑金属的影响
+		 *
+		 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+		 *   const loader = new KTX2Loader()
+		 *     .detectSupport( renderer );
+		 *   
+		 *   loader.load( url, ( texture ) => {
+		 *     texture.mapping = THREE.CubeUVReflectionMapping;
+		 *     scene.environment = texture;
+		 *     scene.background = texture;
+		 *   } );
+		 *   
+		 *   loadTexture( 'textures/fasthdr/ballroom_2k.pmrem.ktx2' );
+		 *   
+		 *   renderer.toneMappingExposure = params.exposure;
+		 *   scene.backgroundBlurriness = params.backgroundBlurriness;
+		 *
+		 * 这些代码在做什么：
+		 * 1. KTX2 是 GPU 友好的压缩纹理容器。
+		 * 2. detectSupport 会根据当前设备/GPU 支持能力选择合适的压缩纹理解码路径。
+		 * 3. 这个案例里的 pmrem.ktx2 已经预过滤，所以不再调用 PMREMGenerator。
+		 * 4. CubeUVReflectionMapping 告诉 Three.js 这张贴图按 PMREM/CubeUV 方式采样。
+		 * 5. 同一环境会同时影响玻璃、金属、粗糙材质和背景。
+		 * 6. 本地镜像把官网 CDN 的 8 个 FastHDR 文件下载到 textures/fasthdr，所以案例被本地化后可以随目录搬走运行。
+		 * 7. render 循环里 exposure 和 backgroundBlurriness 分别控制最终曝光与背景模糊。
+		 *
+		 * 学完后可以迁移到：
+		 * 1. 快速 HDR 产品预览
+		 * 2. 在线模型查看器
+		 * 3. 低内存环境贴图
+		 * 4. 移动端 PBR 展示
+		 * 5. 多环境材质测试
+		 *
+		 * 对应讲解文档：../官方案例讲解/B-光照材质/webgl_materials_envmaps_fasthdr.md
+		 * THREE_TOPIC_LEARNING_NOTES_END */
+		import * as THREE from 'three';
+
+		import Stats from 'three/addons/libs/stats.module.js';
+
+		import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+
+		const params = {
+			'image': 'ballroom',
+			'fov': 40,
+			'exposure': 1.0,
+			'backgroundBlurriness': 0.0
+		};
+
+		let container, stats;
+		let camera, scene, renderer, controls;
+
+		init();
+		/* THREE_TOPIC_INIT_NOTE_START
+		 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+		 * THREE_TOPIC_INIT_NOTE_END */
+
+
+		function init() {
+
+			container = document.createElement('div');
+			document.body.appendChild(container);
+
+			camera = new THREE.PerspectiveCamera(params.fov, window.innerWidth / window.innerHeight, .1, 50);
+			camera.position.set(7, 0, 0);
+
+			scene = new THREE.Scene();
+
+			renderer = new THREE.WebGLRenderer();
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.setAnimationLoop(animate);
+
+			container.appendChild(renderer.domElement);
+
+			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+			//
+
+			const sphereGeometry = new THREE.SphereGeometry(0.45, 64, 32);
+
+			const sphere01 = new THREE.Mesh(sphereGeometry, new THREE.MeshPhysicalMaterial({
+				transmission: 1.0,
+				thickness: 2.0,
+				metalness: 0.0,
+				roughness: 0.0,
+			}));
+			sphere01.position.z += 2;
+			scene.add(sphere01);
+
+			const sphere02 = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({
+				metalness: 0.0,
+				roughness: 1.0,
+			}));
+			sphere02.position.z += 1;
+			scene.add(sphere02);
+
+			const sphere03 = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({
+				metalness: 1.0,
+				roughness: 0.0,
+			}));
+			sphere03.position.z += 0;
+			scene.add(sphere03);
+
+			const sphere04 = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({
+				metalness: 1.0,
+				roughness: 0.5,
+				color: 0x888888
+			}));
+			sphere04.position.z -= 1;
+			scene.add(sphere04);
+
+			const sphere05 = new THREE.Mesh(sphereGeometry, new THREE.MeshStandardMaterial({
+				metalness: 0.0,
+				roughness: 0.0,
+				color: 0x6ab440
+			}));
+			sphere05.position.z -= 2;
+			scene.add(sphere05);
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：KTX2 是 GPU 友好的压缩纹理容器。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			const loader = new KTX2Loader()
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：detectSupport 会根据当前设备/GPU 支持能力选择合适的压缩纹理解码路径。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				.detectSupport(renderer);
+
+			function loadTexture(url) {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：这个案例里的 pmrem.ktx2 已经预过滤，所以不再调用 PMREMGenerator。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				loader.load(url, (texture) => {
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：CubeUVReflectionMapping 告诉 Three.js 这张贴图按 PMREM/CubeUV 方式采样。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					texture.mapping = THREE.CubeUVReflectionMapping;
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：同一环境会同时影响玻璃、金属、粗糙材质和背景。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					scene.environment = texture;
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：本地镜像把官网 CDN 的 8 个 FastHDR 文件下载到 textures/fasthdr，所以案例被本地化后可以随目录搬走运行。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					scene.background = texture;
+
+				});
+
+			}
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：render 循环里 exposure 和 backgroundBlurriness 分别控制最终曝光与背景模糊。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			loadTexture('textures/fasthdr/ballroom_2k.pmrem.ktx2');
+
+			stats = new Stats();
+			container.appendChild(stats.dom);
+
+			controls = new OrbitControls(camera, renderer.domElement);
+			controls.minDistance = .1;
+			controls.maxDistance = 20;
+			controls.enableDamping = true;
+
+			window.addEventListener('resize', onWindowResize);
+
+			const gui = new GUI();
+
+			gui.add(params, 'image', {
+				'ballroom': 'textures/fasthdr/ballroom_2k.pmrem.ktx2',
+				'brown photostudio': 'textures/fasthdr/brown_photostudio_02_2k.pmrem.ktx2',
+				'cape hill': 'textures/fasthdr/cape_hill_2k.pmrem.ktx2',
+				'cannon': 'textures/fasthdr/cannon_2k.pmrem.ktx2',
+				'metro noord': 'textures/fasthdr/metro_noord_2k.pmrem.ktx2',
+				'the sky is on fire': 'textures/fasthdr/the_sky_is_on_fire_2k.pmrem.ktx2',
+				'studio small 09': 'textures/fasthdr/studio_small_09_2k.pmrem.ktx2',
+				'wide street 01': 'textures/fasthdr/wide_street_01_2k.pmrem.ktx2'
+			}).onChange(() => {
+
+				loadTexture(params.image);
+
+			});
+
+			gui.add(params, 'exposure', 0, 2, 0.01);
+
+			gui.add(params, 'fov', 10, 100).onChange(() => {
+
+				camera.fov = params.fov;
+				camera.updateProjectionMatrix();
+
+			});
+
+			gui.add(params, 'backgroundBlurriness', 0, 1, 0.01).name('background blurriness');
+
+			gui.open();
+
+		}
+		/* THREE_TOPIC_RESIZE_NOTE_START
+		 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+		 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+		function onWindowResize() {
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(width, height);
+
+		}
+		/* THREE_TOPIC_ANIMATE_NOTE_START
+		 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+		 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+		function animate() {
+
+			stats.begin();
+			render();
+			stats.end();
+
+		}
+		/* THREE_TOPIC_RENDER_NOTE_START
+		 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+		 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+		function render() {
+
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：render 循环里 exposure 和 backgroundBlurriness 分别控制最终曝光与背景模糊。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			renderer.toneMappingExposure = params.exposure;
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：render 循环里 exposure 和 backgroundBlurriness 分别控制最终曝光与背景模糊。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			scene.backgroundBlurriness = params.backgroundBlurriness;
+
+			controls.update();
+
+			renderer.render(scene, camera);
+
+		}
+
+	</script>
+
+</body>
+
+</html>

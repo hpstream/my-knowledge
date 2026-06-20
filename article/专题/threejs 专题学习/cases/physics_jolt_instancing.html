@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - jolt instancing</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - jolt instancing">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_jolt_instancing.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_jolt_instancing.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/jrouwe/JoltPhysics.js/" target="_blank">jolt</a> instancing
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_jolt_instancing.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习 Jolt 物理引擎如何和 Three 的 InstancedMesh 结合，在大量相同物体上保持渲染和物理性能。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. JoltPhysics 封装
+			 * 2. WebGPU renderer
+			 * 3. InstancedMesh 刚体
+			 * 4. userData.physics
+			 * 5. setMeshPosition
+			 * 6. 批量物理同步
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   import * as THREE from 'three/webgpu';
+			 *   import { JoltPhysics } from 'three/addons/physics/JoltPhysics.js';
+			 *   
+			 *   physics = await JoltPhysics();
+			 *   physics.addScene( scene );
+			 *   
+			 *   boxes.userData.physics = { mass: 1 };
+			 *   physics.setMeshPosition( boxes, position, index );
+			 *
+			 * 这些代码在做什么：
+			 * 1. 这个案例不是普通 WebGL，而是 three/webgpu，说明 Three 的物理辅助也可以服务新渲染管线。
+			 * 2. InstancedMesh 用一个几何体和材质画很多个实例，减少 draw call。
+			 * 3. userData.physics = { mass: 1 } 告诉物理封装这些实例是动态刚体。
+			 * 4. physics.addScene 会扫描场景，给带有 physics 配置的网格创建物理体。
+			 * 5. setMeshPosition 可以单独重置某个实例的位置，不需要把整个 InstancedMesh 拆成很多 Mesh。
+			 * 6. Jolt 常用于实时游戏物理，适合大量刚体、车辆、角色等高性能场景。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做大量砖块、碎石、掉落物
+			 * 2. 做 WebGPU 物理压测
+			 * 3. 做游戏里的可交互杂物堆
+			 * 4. 扩展成掉落模拟或碰撞沙盒
+			 * 5. 对比 Jolt 与 Rapier/Ammo 的工程适用性
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_jolt_instancing.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：这个案例不是普通 WebGL，而是 three/webgpu，说明 Three 的物理辅助也可以服务新渲染管线。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			import * as THREE from 'three/webgpu';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			/* THREE_TOPIC_CORE_NOTE_START
+			 * 学习注释：InstancedMesh 用一个几何体和材质画很多个实例，减少 draw call。
+			 * THREE_TOPIC_CORE_NOTE_END */
+			import { JoltPhysics } from 'three/addons/physics/JoltPhysics.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats;
+			let physics, position;
+
+			let boxes, spheres;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：userData.physics = { mass: 1 } 告诉物理封装这些实例是动态刚体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics = await JoltPhysics();
+				position = new THREE.Vector3();
+
+				//
+
+				camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( - 1, 1.5, 2 );
+				camera.lookAt( 0, 0.5, 0 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x666666 );
+
+				const hemiLight = new THREE.HemisphereLight();
+				scene.add( hemiLight );
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
+				dirLight.position.set( 5, 5, 5 );
+				dirLight.castShadow = true;
+				dirLight.shadow.camera.zoom = 2;
+				dirLight.shadow.bias = - 0.001;
+				scene.add( dirLight );
+
+				const shadowPlane = new THREE.Mesh(
+					new THREE.PlaneGeometry( 10, 10 ),
+					new THREE.ShadowMaterial( {
+						color: 0x444444
+					} ),
+				);
+				shadowPlane.rotation.x = - Math.PI / 2;
+				shadowPlane.receiveShadow = true;
+				scene.add( shadowPlane );
+
+				const floorCollider = new THREE.Mesh(
+					new THREE.BoxGeometry( 10, 5, 10 ),
+					new THREE.MeshBasicMaterial( { color: 0x666666 } )
+				);
+				floorCollider.position.y = - 2.5;
+				floorCollider.userData.physics = { mass: 0 };
+				floorCollider.visible = false;
+				scene.add( floorCollider );
+
+				//
+
+				const material = new THREE.MeshLambertMaterial();
+
+				const matrix = new THREE.Matrix4();
+				const color = new THREE.Color();
+
+				// Boxes
+
+				const geometryBox = new THREE.BoxGeometry( 0.075, 0.075, 0.075 );
+				boxes = new THREE.InstancedMesh( geometryBox, material, 400 );
+				boxes.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+				boxes.castShadow = true;
+				boxes.receiveShadow = true;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：setMeshPosition 可以单独重置某个实例的位置，不需要把整个 InstancedMesh 拆成很多 Mesh。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				boxes.userData.physics = { mass: 1 };
+				scene.add( boxes );
+
+				for ( let i = 0; i < boxes.count; i ++ ) {
+
+					matrix.setPosition( Math.random() - 0.5, Math.random() * 2, Math.random() - 0.5 );
+					boxes.setMatrixAt( i, matrix );
+					boxes.setColorAt( i, color.setHex( 0xffffff * Math.random() ) );
+
+				}
+
+				// Spheres
+
+				const geometrySphere = new THREE.IcosahedronGeometry( 0.05, 4 );
+				spheres = new THREE.InstancedMesh( geometrySphere, material, 400 );
+				spheres.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+				spheres.castShadow = true;
+				spheres.receiveShadow = true;
+				spheres.userData.physics = { mass: 1 };
+				scene.add( spheres );
+
+				for ( let i = 0; i < spheres.count; i ++ ) {
+
+					matrix.setPosition( Math.random() - 0.5, Math.random() * 2, Math.random() - 0.5 );
+					spheres.setMatrixAt( i, matrix );
+					spheres.setColorAt( i, color.setHex( 0xffffff * Math.random() ) );
+
+				}
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：physics.addScene 会扫描场景，给带有 physics 配置的网格创建物理体。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics.addScene( scene );
+
+				//
+
+				renderer = new THREE.WebGPURenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				//
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.target.y = 0.5;
+				controls.update();
+
+				setInterval( () => {
+
+					let index = Math.floor( Math.random() * boxes.count );
+
+					position.set( 0, Math.random() + 1, 0 );
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：Jolt 常用于实时游戏物理，适合大量刚体、车辆、角色等高性能场景。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					physics.setMeshPosition( boxes, position, index );
+
+					//
+
+					index = Math.floor( Math.random() * spheres.count );
+
+					position.set( 0, Math.random() + 1, 0 );
+					physics.setMeshPosition( spheres, position, index );
+
+				}, 1000 / 60 );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - additive animation - skinning</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - additive animation - skinning">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_animation_skinning_additive_blending.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_animation_skinning_additive_blending.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			a {
+				color: blue;
+			}
+			.control-inactive button {
+				color: #888;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="container"></div>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - Skeletal Additive Animation Blending
+			(model from <a href="https://www.mixamo.com/" target="_blank" rel="noopener">mixamo.com</a>)<br/>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_animation_skinning_additive_blending.html
+			 * 分组：C｜模型资产和动画
+			 * 目标：学习基础动作之上如何叠加额外动作，例如一边走路一边点头、摇头、摆姿势。
+			 *
+			 * 阅读顺序：先找 loader 和模型路径，再看解码器/压缩纹理/环境贴图，最后看 AnimationMixer 或模型后处理。模型资产类案例要重点理解“资源怎么进来、进来后如何适配场景”。
+			 *
+			 * 核心知识点：
+			 * 1. 基础动作层
+			 * 2. 叠加动作层
+			 * 3. AnimationUtils.makeClipAdditive
+			 * 4. subclip
+			 * 5. 权重混合
+			 * 6. 多层角色动画
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   THREE.AnimationUtils.makeClipAdditive( clip );
+			 *   clip = THREE.AnimationUtils.subclip( clip, clip.name, 2, 3, 30 );
+			 *   
+			 *   const action = mixer.clipAction( clip );
+			 *   additiveActions[ name ].action = action;
+			 *   
+			 *   setWeight( settings.action, weight );
+			 *   setWeight( action, settings.weight );
+			 *   action.play();
+			 *
+			 * 这些代码在做什么：
+			 * 1. 基础动作决定角色整体行为，例如 idle、walk、run。
+			 * 2. 叠加动作不是替换基础动作，而是在基础姿态上增加偏移，例如点头、摇头、上半身姿态。
+			 * 3. makeClipAdditive 把普通动画转换成“相对变化”，让它适合叠加。
+			 * 4. subclip 可以从一段长动画里截取某几帧作为单独姿态或短动作。
+			 * 5. 每个叠加动作有自己的权重，权重越大，对最终姿态影响越明显。
+			 * 6. 这就是很多游戏和虚拟人系统里“下半身走路，上半身做动作”的基础思想。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做角色表情、点头、挥手、受击反应
+			 * 2. 做虚拟人一边走一边说话
+			 * 3. 做上半身动作和下半身移动分离
+			 * 4. 做动画编辑器里的动作层
+			 * 5. 扩展成 IK、瞄准、手持物动画
+			 *
+			 * 对应讲解文档：../官方案例讲解/C-模型资产动画/webgl_animation_skinning_additive_blending.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+			let scene, renderer, camera, stats;
+			let model, skeleton, mixer, timer;
+
+			const crossFadeControls = [];
+
+			let currentBaseAction = 'idle';
+			const allActions = [];
+			const baseActions = {
+				idle: { weight: 1 },
+				walk: { weight: 0 },
+				run: { weight: 0 }
+			};
+			const additiveActions = {
+				sneak_pose: { weight: 0 },
+				sad_pose: { weight: 0 },
+				agree: { weight: 0 },
+				headShake: { weight: 0 }
+			};
+			let panelSettings, numAnimations;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				const container = document.getElementById( 'container' );
+				timer = new THREE.Timer();
+				timer.connect( document );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xa0a0a0 );
+				scene.fog = new THREE.Fog( 0xa0a0a0, 10, 50 );
+
+				const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x8d8d8d, 3 );
+				hemiLight.position.set( 0, 20, 0 );
+				scene.add( hemiLight );
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
+				dirLight.position.set( 3, 10, 10 );
+				dirLight.castShadow = true;
+				dirLight.shadow.camera.top = 2;
+				dirLight.shadow.camera.bottom = - 2;
+				dirLight.shadow.camera.left = - 2;
+				dirLight.shadow.camera.right = 2;
+				dirLight.shadow.camera.near = 0.1;
+				dirLight.shadow.camera.far = 40;
+				scene.add( dirLight );
+
+				// ground
+
+				const mesh = new THREE.Mesh( new THREE.PlaneGeometry( 100, 100 ), new THREE.MeshPhongMaterial( { color: 0xcbcbcb, depthWrite: false } ) );
+				mesh.rotation.x = - Math.PI / 2;
+				mesh.receiveShadow = true;
+				scene.add( mesh );
+
+				const loader = new GLTFLoader();
+				loader.load( 'models/gltf/Xbot.glb', function ( gltf ) {
+
+					model = gltf.scene;
+					scene.add( model );
+
+					model.traverse( function ( object ) {
+
+						if ( object.isMesh ) object.castShadow = true;
+
+					} );
+
+					skeleton = new THREE.SkeletonHelper( model );
+					skeleton.visible = false;
+					scene.add( skeleton );
+
+					const animations = gltf.animations;
+					mixer = new THREE.AnimationMixer( model );
+
+					numAnimations = animations.length;
+
+					for ( let i = 0; i !== numAnimations; ++ i ) {
+
+						let clip = animations[ i ];
+						const name = clip.name;
+
+						if ( baseActions[ name ] ) {
+
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：makeClipAdditive 把普通动画转换成“相对变化”，让它适合叠加。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							const action = mixer.clipAction( clip );
+							activateAction( action );
+							baseActions[ name ].action = action;
+							allActions.push( action );
+
+						} else if ( additiveActions[ name ] ) {
+
+							// Make the clip additive and remove the reference frame
+
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：基础动作决定角色整体行为，例如 idle、walk、run。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							THREE.AnimationUtils.makeClipAdditive( clip );
+
+							if ( clip.name.endsWith( '_pose' ) ) {
+
+								/* THREE_TOPIC_CORE_NOTE_START
+								 * 学习注释：叠加动作不是替换基础动作，而是在基础姿态上增加偏移，例如点头、摇头、上半身姿态。
+								 * THREE_TOPIC_CORE_NOTE_END */
+								clip = THREE.AnimationUtils.subclip( clip, clip.name, 2, 3, 30 );
+
+							}
+
+							const action = mixer.clipAction( clip );
+							activateAction( action );
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：subclip 可以从一段长动画里截取某几帧作为单独姿态或短动作。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							additiveActions[ name ].action = action;
+							allActions.push( action );
+
+						}
+
+					}
+
+					createPanel();
+
+					renderer.setAnimationLoop( animate );
+
+				} );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				container.appendChild( renderer.domElement );
+
+				// camera
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 100 );
+				camera.position.set( - 1, 2, 3 );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.enablePan = false;
+				controls.enableZoom = false;
+				controls.target.set( 0, 1, 0 );
+				controls.update();
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function createPanel() {
+
+				const panel = new GUI( { width: 310 } );
+
+				const folder1 = panel.addFolder( 'Base Actions' );
+				const folder2 = panel.addFolder( 'Additive Action Weights' );
+				const folder3 = panel.addFolder( 'General Speed' );
+
+				panelSettings = {
+					'modify time scale': 1.0
+				};
+
+				const baseNames = [ 'None', ...Object.keys( baseActions ) ];
+
+				for ( let i = 0, l = baseNames.length; i !== l; ++ i ) {
+
+					const name = baseNames[ i ];
+					const settings = baseActions[ name ];
+					panelSettings[ name ] = function () {
+
+						const currentSettings = baseActions[ currentBaseAction ];
+						const currentAction = currentSettings ? currentSettings.action : null;
+						const action = settings ? settings.action : null;
+
+						if ( currentAction !== action ) {
+
+							prepareCrossFade( currentAction, action, 0.35 );
+
+						}
+
+					};
+
+					crossFadeControls.push( folder1.add( panelSettings, name ) );
+
+				}
+
+				for ( const name of Object.keys( additiveActions ) ) {
+
+					const settings = additiveActions[ name ];
+
+					panelSettings[ name ] = settings.weight;
+					folder2.add( panelSettings, name, 0.0, 1.0, 0.01 ).listen().onChange( function ( weight ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：每个叠加动作有自己的权重，权重越大，对最终姿态影响越明显。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						setWeight( settings.action, weight );
+						settings.weight = weight;
+
+					} );
+
+				}
+
+				folder3.add( panelSettings, 'modify time scale', 0.0, 1.5, 0.01 ).onChange( modifyTimeScale );
+
+				folder1.open();
+				folder2.open();
+				folder3.open();
+
+				crossFadeControls.forEach( function ( control ) {
+
+					control.setInactive = function () {
+
+						control.domElement.classList.add( 'control-inactive' );
+
+					};
+
+					control.setActive = function () {
+
+						control.domElement.classList.remove( 'control-inactive' );
+
+					};
+
+					const settings = baseActions[ control.property ];
+
+					if ( ! settings || ! settings.weight ) {
+
+						control.setInactive();
+
+					}
+
+				} );
+
+			}
+
+			function activateAction( action ) {
+
+				const clip = action.getClip();
+				const settings = baseActions[ clip.name ] || additiveActions[ clip.name ];
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：这就是很多游戏和虚拟人系统里“下半身走路，上半身做动作”的基础思想。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				setWeight( action, settings.weight );
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：这就是很多游戏和虚拟人系统里“下半身走路，上半身做动作”的基础思想。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				action.play();
+
+			}
+
+			function modifyTimeScale( speed ) {
+
+				mixer.timeScale = speed;
+
+			}
+
+			function prepareCrossFade( startAction, endAction, duration ) {
+
+				// If the current action is 'idle', execute the crossfade immediately;
+				// else wait until the current action has finished its current loop
+
+				if ( currentBaseAction === 'idle' || ! startAction || ! endAction ) {
+
+					executeCrossFade( startAction, endAction, duration );
+
+				} else {
+
+					synchronizeCrossFade( startAction, endAction, duration );
+
+				}
+
+				// Update control colors
+
+				if ( endAction ) {
+
+					const clip = endAction.getClip();
+					currentBaseAction = clip.name;
+
+				} else {
+
+					currentBaseAction = 'None';
+
+				}
+
+				crossFadeControls.forEach( function ( control ) {
+
+					const name = control.property;
+
+					if ( name === currentBaseAction ) {
+
+						control.setActive();
+
+					} else {
+
+						control.setInactive();
+
+					}
+
+				} );
+
+			}
+
+			function synchronizeCrossFade( startAction, endAction, duration ) {
+
+				mixer.addEventListener( 'loop', onLoopFinished );
+
+				function onLoopFinished( event ) {
+
+					if ( event.action === startAction ) {
+
+						mixer.removeEventListener( 'loop', onLoopFinished );
+
+						executeCrossFade( startAction, endAction, duration );
+
+					}
+
+				}
+
+			}
+
+			function executeCrossFade( startAction, endAction, duration ) {
+
+				// Not only the start action, but also the end action must get a weight of 1 before fading
+				// (concerning the start action this is already guaranteed in this place)
+
+				if ( endAction ) {
+
+					setWeight( endAction, 1 );
+					endAction.time = 0;
+
+					if ( startAction ) {
+
+						// Crossfade with warping
+
+						startAction.crossFadeTo( endAction, duration, true );
+
+					} else {
+
+						// Fade in
+
+						endAction.fadeIn( duration );
+
+					}
+
+				} else {
+
+					// Fade out
+
+					startAction.fadeOut( duration );
+
+				}
+
+			}
+
+			// This function is needed, since animationAction.crossFadeTo() disables its start action and sets
+			// the start action's timeScale to ((start animation's duration) / (end animation's duration))
+
+			function setWeight( action, weight ) {
+
+				action.enabled = true;
+				action.setEffectiveTimeScale( 1 );
+				action.setEffectiveWeight( weight );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+			function animate() {
+
+				timer.update();
+
+				// Render loop
+
+				for ( let i = 0; i !== numAnimations; ++ i ) {
+
+					const action = allActions[ i ];
+					const clip = action.getClip();
+					const settings = baseActions[ clip.name ] || additiveActions[ clip.name ];
+					settings.weight = action.getEffectiveWeight();
+
+				}
+
+				// Get the time elapsed since the last frame, used for mixer update
+
+				const mixerUpdateDelta = timer.getDelta();
+
+				// Update the animation mixer, the stats panel, and render this frame
+
+				mixer.update( mixerUpdateDelta );
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+
+	</body>
+</html>

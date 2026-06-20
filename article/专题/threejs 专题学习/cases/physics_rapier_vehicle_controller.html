@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - rapier3d vehicle controller</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - rapier3d vehicle controller">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_rapier_vehicle_controller.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_rapier_vehicle_controller.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				color: #333;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/dimforge/rapier.js" target="_blank">rapier</a> vehicle controller
+			<p>WASD or Arrow keys to move</p>
+			<p>Space to brake</p>
+   			<p>R to reset</p>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_rapier_vehicle_controller.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习车辆不只是四个轮子跟着车身转，而是底盘刚体、悬挂、轮胎摩擦、转向、刹车和驱动力的组合。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. createVehicleController
+			 * 2. chassis 刚体
+			 * 3. addWheel
+			 * 4. 悬挂长度和刚度
+			 * 5. 轮胎摩擦
+			 * 6. 发动机力/刹车/转向
+			 * 7. 轮子视觉同步
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   vehicleController = physics.world.createVehicleController( chassis );
+			 *   
+			 *   vehicleController.addWheel(
+			 *     wheelPosition, wheelDirection, wheelAxle,
+			 *     suspensionRestLength, wheelRadius
+			 *   );
+			 *   
+			 *   vehicleController.setWheelEngineForce( 0, engineForce );
+			 *   vehicleController.setWheelSteering( 0, steering );
+			 *   vehicleController.setWheelBrake( 0, wheelBrake );
+			 *
+			 * 这些代码在做什么：
+			 * 1. 车辆控制器把底盘刚体当成主体，轮子通过射线/悬挂模型和地面交互。
+			 * 2. addWheel 定义轮子相对车身的位置、悬挂方向、车轴方向、悬挂静止长度和轮半径。
+			 * 3. suspension stiffness 决定车身支撑感，太软像船，太硬容易抖。
+			 * 4. friction slip 决定轮胎抓地能力，低抓地会更像打滑。
+			 * 5. engineForce 负责驱动，brake 负责制动，steering 负责前轮转向。
+			 * 6. updateWheels 读取物理车辆的轮子状态，再把可视化轮子 mesh 的位置和旋转同步过去。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做赛车、越野车、叉车、购物车
+			 * 2. 做车辆参数调试工具
+			 * 3. 做驾驶类数字孪生或训练场景
+			 * 4. 扩展成车辆碰撞、坡道、漂移、轮胎磨损
+			 * 5. 理解真实车辆模拟要拆成底盘、悬挂、轮胎和输入
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_rapier_vehicle_controller.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RapierPhysics } from 'three/addons/physics/RapierPhysics.js';
+			import { RapierHelper } from 'three/addons/helpers/RapierHelper.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats;
+			let physics, physicsHelper, controls;
+			let car, chassis, wheels, movement, vehicleController;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xbfd1e5 );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 4, 10 );
+
+				const ambient = new THREE.HemisphereLight( 0x555555, 0xFFFFFF );
+
+				scene.add( ambient );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 4 );
+
+				light.position.set( 0, 12.5, 12.5 );
+				light.castShadow = true;
+				light.shadow.radius = 3;
+				light.shadow.blurSamples = 8;
+				light.shadow.mapSize.width = 2048;
+				light.shadow.mapSize.height = 2048;
+
+				const size = 40;
+				light.shadow.camera.left = - size;
+				light.shadow.camera.bottom = - size;
+				light.shadow.camera.right = size;
+				light.shadow.camera.top = size;
+				light.shadow.camera.near = 1;
+				light.shadow.camera.far = 50;
+
+				scene.add( light );
+			
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+				renderer.setAnimationLoop( animate );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.target = new THREE.Vector3( 0, 2, 0 );
+				controls.update();
+
+				const geometry = new THREE.BoxGeometry( 100, 0.5, 100 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xFFFFFF } );
+			
+				const ground = new THREE.Mesh( geometry, material );
+				ground.receiveShadow = true;
+
+				ground.position.set( 0, - 0.25, - 20 );
+				ground.userData.physics = { mass: 0 };
+
+  				scene.add( ground );
+
+				new THREE.TextureLoader().load( 'textures/grid.png', function ( texture ) {
+
+					texture.wrapS = THREE.RepeatWrapping;
+					texture.wrapT = THREE.RepeatWrapping;
+					texture.repeat.set( 80, 80 );
+					ground.material.map = texture;
+					ground.material.needsUpdate = true;
+
+				} );
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+			
+				initPhysics();
+			
+				onWindowResize();
+
+				// Movement input
+				movement = {
+					forward: 0,
+					right: 0,
+					brake: 0,
+					reset: false,
+					accelerateForce: { value: 0, min: - 30, max: 30, step: 1 },
+					brakeForce: { value: 0, min: 0, max: 1, step: 0.05 }
+				};
+
+				window.addEventListener( 'keydown', ( event ) => {
+
+					//console.log( event.key );
+					if ( event.key === 'w' || event.key === 'ArrowUp' ) movement.forward = - 1;
+					if ( event.key === 's' || event.key === 'ArrowDown' ) movement.forward = 1;
+					if ( event.key === 'a' || event.key === 'ArrowLeft' ) movement.right = 1;
+					if ( event.key === 'd' || event.key === 'ArrowRight' ) movement.right = - 1;
+					if ( event.key === 'r' ) movement.reset = true;
+					if ( event.key === ' ' ) movement.brake = 1;
+			
+				} );
+
+				window.addEventListener( 'keyup', ( event ) => {
+
+					if ( event.key === 'w' || event.key === 's' || event.key === 'ArrowUp' || event.key === 'ArrowDown' ) movement.forward = 0;
+					if ( event.key === 'a' || event.key === 'd' || event.key === 'ArrowLeft' || event.key === 'ArrowRight' ) movement.right = 0;
+					if ( event.key === 'r' ) movement.reset = false;
+					if ( event.key === ' ' ) movement.brake = 0;
+			
+				} );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			async function initPhysics() {
+
+				//Initialize physics engine using the script in the jsm/physics folder
+				physics = await RapierPhysics();
+
+				//Optionally display collider outlines
+				physicsHelper = new RapierHelper( physics.world );
+				scene.add( physicsHelper );
+
+				physics.addScene( scene );
+
+  				createCar();
+
+			}
+
+			function createCar( ) {
+
+				const geometry = new THREE.BoxGeometry( 2, 1, 4 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xFF0000 } );
+				const mesh = new THREE.Mesh( geometry, material );
+				mesh.castShadow = true;
+				scene.add( mesh );
+				car = mesh;
+
+				mesh.position.y = 1;
+
+				physics.addMesh( mesh, 10, 0.8 ); // addMesh places the RigidBody in the mesh.userData.physics object
+				chassis = mesh.userData.physics.body;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：车辆控制器把底盘刚体当成主体，轮子通过射线/悬挂模型和地面交互。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				vehicleController = physics.world.createVehicleController( chassis );
+
+				wheels = [];
+
+				addWheel( 0, { x: - 1, y: 0, z: - 1.5 }, mesh );
+				addWheel( 1, { x: 1, y: 0, z: - 1.5 }, mesh );
+				addWheel( 2, { x: - 1, y: 0, z: 1.5 }, mesh );
+				addWheel( 3, { x: 1, y: 0, z: 1.5 }, mesh );
+
+				vehicleController.setWheelSteering( 0, Math.PI / 4 );
+				vehicleController.setWheelSteering( 1, Math.PI / 4 );
+
+			}
+
+			function addWheel( index, pos, carMesh ) {
+
+				// Define wheel properties
+				const wheelRadius = 0.3;
+				const wheelWidth = 0.4;
+				const suspensionRestLength = 0.8;
+				const wheelPosition = pos; // Position relative to chassis
+				const wheelDirection = { x: 0.0, y: - 1.0, z: 0.0 }; // Downward direction
+				const wheelAxle = { x: - 1.0, y: 0.0, z: 0.0 }; // Axle direction
+
+				// Add the wheel to the vehicle controller
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：addWheel 定义轮子相对车身的位置、悬挂方向、车轴方向、悬挂静止长度和轮半径。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				vehicleController.addWheel(
+					wheelPosition,
+					wheelDirection,
+					wheelAxle,
+					suspensionRestLength,
+					wheelRadius
+				);
+
+				// Set suspension stiffness for wheel
+				vehicleController.setWheelSuspensionStiffness( index, 24.0 );
+
+				// Set wheel friction
+				vehicleController.setWheelFrictionSlip( index, 1000.0 );
+
+				// Enable steering for the wheel
+				vehicleController.setWheelSteering( index, pos.z < 0 );
+
+				// Create a wheel mesh
+				const geometry = new THREE.CylinderGeometry( wheelRadius, wheelRadius, wheelWidth, 16 );
+				geometry.rotateZ( Math.PI * 0.5 );
+				const material = new THREE.MeshStandardMaterial( { color: 0x000000 } );
+				const wheel = new THREE.Mesh( geometry, material );
+
+				wheel.castShadow = true;
+
+				wheel.position.copy( pos );
+
+				wheels.push( wheel );
+				carMesh.add( wheel );
+
+			}
+
+			function updateWheels() {
+
+				if ( vehicleController === undefined ) return;
+
+				const wheelSteeringQuat = new THREE.Quaternion();
+				const wheelRotationQuat = new THREE.Quaternion();
+				const up = new THREE.Vector3( 0, 1, 0 );
+
+				//const chassisPosition = chassis.translation();
+
+				wheels.forEach( ( wheel, index ) => {
+
+					const wheelAxleCs = vehicleController.wheelAxleCs( index );
+					const connection = vehicleController.wheelChassisConnectionPointCs( index ).y || 0;
+					const suspension = vehicleController.wheelSuspensionLength( index ) || 0;
+					const steering = vehicleController.wheelSteering( index ) || 0;
+					const rotationRad = vehicleController.wheelRotation( index ) || 0;
+
+					wheel.position.y = connection - suspension;
+
+					wheelSteeringQuat.setFromAxisAngle( up, steering );
+					wheelRotationQuat.setFromAxisAngle( wheelAxleCs, rotationRad );
+
+					wheel.quaternion.multiplyQuaternions( wheelSteeringQuat, wheelRotationQuat );
+			
+				} );
+
+			}
+
+			function updateCarControl() {
+
+				if ( movement.reset ) {
+
+					chassis.setTranslation( new physics.RAPIER.Vector3( 0, 1, 0 ), true );
+					chassis.setRotation( new physics.RAPIER.Quaternion( 0, 0, 0, 1 ), true );
+					chassis.setLinvel( new physics.RAPIER.Vector3( 0, 0, 0 ), true );
+					chassis.setAngvel( new physics.RAPIER.Vector3( 0, 0, 0 ), true );
+
+					movement.accelerateForce.value = 0;
+					movement.brakeForce.value = 0;
+
+					return;
+
+				}
+
+				let accelerateForce = 0;
+
+				if ( movement.forward < 0 ) {
+
+					//if (movement.accelerateForce.value === 0) chassis.wakeUp();
+					accelerateForce = movement.accelerateForce.value - movement.accelerateForce.step;
+					if ( accelerateForce < movement.accelerateForce.min ) accelerateForce = movement.accelerateForce.min;
+			
+				} else if ( movement.forward > 0 ) {
+
+					//if (movement.accelerateForce.value === 0) chassis.wakeUp();
+					accelerateForce = movement.accelerateForce.value + movement.accelerateForce.step;
+			
+					if ( accelerateForce > movement.accelerateForce.max ) accelerateForce = movement.accelerateForce.max;
+			
+				} else {
+
+					if ( chassis.isSleeping() ) chassis.wakeUp();
+
+				}
+
+				movement.accelerateForce.value = accelerateForce;
+
+				//console.log(accelerateForce);
+
+				let brakeForce = 0;
+
+				if ( movement.brake > 0 ) {
+			
+					brakeForce = movement.brakeForce.value + movement.brakeForce.step;
+					if ( brakeForce > movement.brakeForce.max ) brakeForce = movement.brakeForce.max;
+
+				}
+
+				movement.brakeForce.value = brakeForce;
+
+				const engineForce = accelerateForce;
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：suspension stiffness 决定车身支撑感，太软像船，太硬容易抖。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				vehicleController.setWheelEngineForce( 0, engineForce );
+				vehicleController.setWheelEngineForce( 1, engineForce );
+
+				const currentSteering = vehicleController.wheelSteering( 0 );
+				const steerDirection = movement.right;
+				const steerAngle = Math.PI / 4;
+
+				const steering = THREE.MathUtils.lerp( currentSteering, steerAngle * steerDirection, 0.25 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：friction slip 决定轮胎抓地能力，低抓地会更像打滑。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				vehicleController.setWheelSteering( 0, steering );
+				vehicleController.setWheelSteering( 1, steering );
+
+				const wheelBrake = movement.brake * brakeForce;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：engineForce 负责驱动，brake 负责制动，steering 负责前轮转向。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				vehicleController.setWheelBrake( 0, wheelBrake );
+				vehicleController.setWheelBrake( 1, wheelBrake );
+				vehicleController.setWheelBrake( 2, wheelBrake );
+				vehicleController.setWheelBrake( 3, wheelBrake );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize( ) {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+
+			function animate() {
+
+				if ( vehicleController ) {
+
+					updateCarControl();
+					vehicleController.updateVehicle( 1 / 60 );
+					updateWheels();
+
+				}
+
+				if ( controls && car ) {
+
+					controls.target.copy( car.position );
+					controls.update();
+
+				}
+
+				if ( physicsHelper ) physicsHelper.update();
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

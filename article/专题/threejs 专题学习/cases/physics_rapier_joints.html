@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js physics - rapier3d joints</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<meta property="og:title" content="three.js physics - rapier3d joints">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/physics_rapier_joints.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/physics_rapier_joints.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				color: #333;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> physics - <a href="https://github.com/dimforge/rapier.js" target="_blank">rapier</a> joints
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：physics_rapier_joints.html
+			 * 分组：F｜物理模拟
+			 * 目标：学习两个刚体之间如何通过关节连接，从而形成链条、吊挂、机械臂这类受约束的运动。
+			 *
+			 * 阅读顺序：先找物理引擎初始化，再找 mesh 如何创建 body/collider，最后看每帧物理结果如何同步回 Three 对象。物理类案例要重点区分“看得见的 mesh”和“真正参与碰撞的 body/collider”。
+			 *
+			 * 核心知识点：
+			 * 1. ImpulseJoint
+			 * 2. spherical joint
+			 * 3. anchor1/anchor2
+			 * 4. 固定点 mass 0
+			 * 5. 角阻尼
+			 * 6. 多刚体链式连接
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const jointParams = physics.RAPIER.JointData.spherical(
+			 *     ( link == pivot ) ? new physics.RAPIER.Vector3( 0, - 0.5, 0 ) : new physics.RAPIER.Vector3( 0, - 1.15, 0 ), // Joint position in world space
+			 *     new physics.RAPIER.Vector3( 0, 1.15, 0 ) // Corresponding attachment on sphere
+			 *   );
+			 *   
+			 *   const body2 = mesh.userData.physics.body;
+			 *   body2.setAngularDamping( 10.0 );
+			 *   
+			 *   physics.world.createImpulseJoint( jointParams, body1, body2, true );
+			 *
+			 * 这些代码在做什么：
+			 * 1. 关节不是把两个 mesh 放在一起，而是在物理世界里约束两个 body 的相对运动。
+			 * 2. spherical joint 类似球窝关节：连接点固定，但允许多个方向旋转。
+			 * 3. anchor1 和 anchor2 是两个刚体各自本地坐标里的连接点。
+			 * 4. 第一个固定球 mass 0，相当于链条挂在墙上或天花板上。
+			 * 5. 每一节链条通过关节连到上一节，多个局部约束形成整体链条行为。
+			 * 6. setAngularDamping 增加角阻尼，减少链条无限摆动，让运动更稳定。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做链条、吊桥、摆锤、机械连接
+			 * 2. 做物理机关和可拖拽约束
+			 * 3. 做车辆悬挂、门铰链、机械臂的基础
+			 * 4. 做吊灯、吊牌、绳索端点连接
+			 * 5. 扩展到 hinge/fixed/revolute 等不同关节
+			 *
+			 * 对应讲解文档：../官方案例讲解/F-物理模拟/physics_rapier_joints.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RapierPhysics } from 'three/addons/physics/RapierPhysics.js';
+			import { RapierHelper } from 'three/addons/helpers/RapierHelper.js';
+			import Stats from 'three/addons/libs/stats.module.js';
+
+			let camera, scene, renderer, stats;
+			let physics, pivot, physicsHelper;
+
+			init();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			async function init() {
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xbfd1e5 );
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 3, 10 );
+
+				const ambient = new THREE.HemisphereLight( 0x555555, 0xFFFFFF );
+
+				scene.add( ambient );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 4 );
+
+				light.position.set( 0, 12.5, 12.5 );
+				light.castShadow = true;
+				light.shadow.radius = 3;
+				light.shadow.blurSamples = 8;
+				light.shadow.mapSize.width = 1024;
+				light.shadow.mapSize.height = 1024;
+
+				const size = 10;
+				light.shadow.camera.left = - size;
+				light.shadow.camera.bottom = - size;
+				light.shadow.camera.right = size;
+				light.shadow.camera.top = size;
+				light.shadow.camera.near = 1;
+				light.shadow.camera.far = 50;
+
+				scene.add( light );
+			
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild( renderer.domElement );
+				renderer.setAnimationLoop( animate );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.target = new THREE.Vector3( 0, 2, 0 );
+				controls.update();
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+				//Create pivot point
+				const geometry = new THREE.SphereGeometry( 0.5 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xFF0000 } );
+			
+				pivot = new THREE.Mesh( geometry, material );
+
+				pivot.position.y = 6;
+				pivot.userData.physics = { mass: 0 };
+
+				scene.add( pivot );
+			
+				initPhysics();
+			
+				onWindowResize();
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			async function initPhysics() {
+
+				//Initialize physics engine using the script in the jsm/physics folder
+				physics = await RapierPhysics();
+
+				physics.addScene( scene );
+
+				//Optionally display collider outlines
+				physicsHelper = new RapierHelper( physics.world );
+				scene.add( physicsHelper );
+
+				const link1 = addLink( pivot, 0 );
+				const link2 = addLink( link1, 2 );
+				addLink( link2, 4 );
+
+			}
+
+			//link - the mesh that the new link will be attached to
+			//x    - used to position the new link
+			function addLink( link, x ) {
+
+				const geometry = new THREE.CapsuleGeometry( 0.25, 1.8 );
+				const material = new THREE.MeshStandardMaterial( { color: 0xCCCC00 } );
+			
+				const mesh = new THREE.Mesh( geometry, material );
+				mesh.rotateZ( Math.PI * 0.5 );
+
+				mesh.position.set( x + 0.9, 5.8, 0 );
+
+				scene.add( mesh );
+
+				physics.addMesh( mesh, 1, 0.5 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：关节不是把两个 mesh 放在一起，而是在物理世界里约束两个 body 的相对运动。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const jointParams = physics.RAPIER.JointData.spherical(
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：spherical joint 类似球窝关节：连接点固定，但允许多个方向旋转。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					( link == pivot ) ? new physics.RAPIER.Vector3( 0, - 0.5, 0 ) : new physics.RAPIER.Vector3( 0, - 1.15, 0 ), // Joint position in world space
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：anchor1 和 anchor2 是两个刚体各自本地坐标里的连接点。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					new physics.RAPIER.Vector3( 0, 1.15, 0 ) // Corresponding attachment on sphere
+				);
+				const body1 = link.userData.physics.body;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：第一个固定球 mass 0，相当于链条挂在墙上或天花板上。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				const body2 = mesh.userData.physics.body;
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：每一节链条通过关节连到上一节，多个局部约束形成整体链条行为。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				body2.setAngularDamping( 10.0 );
+
+				/* THREE_TOPIC_CORE_NOTE_START
+				 * 学习注释：setAngularDamping 增加角阻尼，减少链条无限摆动，让运动更稳定。
+				 * THREE_TOPIC_CORE_NOTE_END */
+				physics.world.createImpulseJoint( jointParams, body1, body2, true );
+
+				return mesh;
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize( ) {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+			/* THREE_TOPIC_ANIMATE_NOTE_START
+			 * animate() 是每帧循环入口。这里通常推进 controls、动画 mixer、物理世界或实例矩阵，然后触发 render。不要只看静态初始化，动态效果多数在这里发生。
+			 * THREE_TOPIC_ANIMATE_NOTE_END */
+
+
+
+			function animate() {
+
+				if ( physicsHelper ) physicsHelper.update();
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+	</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - GLTFloader + variants</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgl - GLTFloader + variants">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgl_loader_gltf_variants.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgl_loader_gltf_variants.jpg">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+
+	<body>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - GLTFLoader + <a href="https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Khronos/KHR_materials_variants" target="_blank" rel="noopener">KHR_materials_variants</a><br />
+			<a href="https://github.com/pushmatrix/glTF-Sample-Models/tree/master/2.0/MaterialsVariantsShoe" target="_blank" rel="noopener">Materials Variants Shoe</a> by
+			<a href="https://github.com/Shopify" target="_blank" rel="noopener">Shopify, Inc</a><br />
+			<a href="https://hdrihaven.com/hdri/?h=quarry_01" target="_blank" rel="noopener">Quarry</a> from <a href="https://hdrihaven.com/" target="_blank" rel="noopener">HDRI Haven</a>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			
+			/* THREE_TOPIC_LEARNING_NOTES_START
+			 * 本注释由本地 Three.js 专题生成，保留官网案例代码结构，只补学习说明。
+			 * 案例：webgl_loader_gltf_variants.html
+			 * 分组：C｜模型资产和动画
+			 * 目标：学习 glTF 的 KHR_materials_variants 扩展，用一个模型承载多个材质变体，例如鞋子的不同配色。
+			 *
+			 * 阅读顺序：先找 loader 和模型路径，再看解码器/压缩纹理/环境贴图，最后看 AnimationMixer 或模型后处理。模型资产类案例要重点理解“资源怎么进来、进来后如何适配场景”。
+			 *
+			 * 核心知识点：
+			 * 1. KHR_materials_variants
+			 * 2. gltfExtensions
+			 * 3. parser.getDependency
+			 * 4. 材质映射
+			 * 5. 原始材质缓存
+			 * 6. 产品配置器
+			 *
+			 * 本案例的关键代码片段，可以在下面源码中搜索这些语句：
+			 *   const variantsExtension = gltf.userData.gltfExtensions[ 'KHR_materials_variants' ];
+			 *   const variants = variantsExtension.variants.map( ( variant ) => variant.name );
+			 *   
+			 *   const meshVariantDef = object.userData.gltfExtensions[ 'KHR_materials_variants' ];
+			 *   const mapping = meshVariantDef.mappings
+			 *     .find( ( mapping ) => mapping.variants.includes( variantIndex ) );
+			 *   object.material = await parser.getDependency( 'material', mapping.material );
+			 *
+			 * 这些代码在做什么：
+			 * 1. KHR_materials_variants 把“同一个模型有哪些可切换材质”写进 glTF 文件里。
+			 * 2. 全局 variantsExtension 保存变体名称，例如不同颜色或不同商品 SKU。
+			 * 3. 每个 mesh 自己记录这个变体应该使用哪个 material。
+			 * 4. parser.getDependency("material", id) 从 glTF 内部按索引取出材质对象，不需要你手写材质。
+			 * 5. 切换变体时，只换材质，不重新加载几何体，所以很适合商品配置器。
+			 * 6. 案例还缓存原始材质，方便从变体切回默认外观。
+			 *
+			 * 学完后可以迁移到：
+			 * 1. 做鞋子、汽车、家具、手表的颜色配置器
+			 * 2. 做商品 SKU 预览
+			 * 3. 做材质方案对比工具
+			 * 4. 做设计评审里的多方案切换
+			 * 5. 扩展成颜色、材质、部件组合的完整配置系统
+			 *
+			 * 对应讲解文档：../官方案例讲解/C-模型资产动画/webgl_loader_gltf_variants.md
+			 * THREE_TOPIC_LEARNING_NOTES_END */
+import * as THREE from 'three';
+
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+
+			let camera, scene, renderer;
+			let gui;
+
+			const state = { variant: 'midnight' };
+
+			init();
+			render();
+			/* THREE_TOPIC_INIT_NOTE_START
+			 * init() 是案例搭建阶段：通常会创建 renderer、camera、scene、灯光、材质、模型、GUI 和事件。读这个函数时先看对象如何被创建和加入 scene。
+			 * THREE_TOPIC_INIT_NOTE_END */
+
+
+			function init() {
+
+				const container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.25, 20 );
+				camera.position.set( 2.5, 1.5, 3.0 );
+
+				scene = new THREE.Scene();
+
+				new HDRLoader()
+					.setPath( 'textures/equirectangular/' )
+					.load( 'quarry_01_1k.hdr', function ( texture ) {
+
+						texture.mapping = THREE.EquirectangularReflectionMapping;
+
+						scene.background = texture;
+						scene.environment = texture;
+
+						render();
+
+						// model
+
+						const loader = new GLTFLoader().setPath( 'models/gltf/MaterialsVariantsShoe/glTF/' );
+						loader.load( 'MaterialsVariantsShoe.gltf', function ( gltf ) {
+
+							gltf.scene.scale.set( 10.0, 10.0, 10.0 );
+
+							scene.add( gltf.scene );
+
+							// GUI
+							gui = new GUI();
+
+							// Details of the KHR_materials_variants extension used here can be found below
+							// https://github.com/KhronosGroup/glTF/tree/master/extensions/2.0/Khronos/KHR_materials_variants
+							const parser = gltf.parser;
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：KHR_materials_variants 把“同一个模型有哪些可切换材质”写进 glTF 文件里。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							const variantsExtension = gltf.userData.gltfExtensions[ 'KHR_materials_variants' ];
+							/* THREE_TOPIC_CORE_NOTE_START
+							 * 学习注释：全局 variantsExtension 保存变体名称，例如不同颜色或不同商品 SKU。
+							 * THREE_TOPIC_CORE_NOTE_END */
+							const variants = variantsExtension.variants.map( ( variant ) => variant.name );
+							const variantsCtrl = gui.add( state, 'variant', variants ).name( 'Variant' );
+
+							selectVariant( scene, parser, variantsExtension, state.variant );
+
+							variantsCtrl.onChange( ( value ) => selectVariant( scene, parser, variantsExtension, value ) );
+
+							render();
+
+						} );
+
+					} );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 1;
+				container.appendChild( renderer.domElement );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.addEventListener( 'change', render ); // use if there is no animation loop
+				controls.minDistance = 2;
+				controls.maxDistance = 10;
+				controls.target.set( 0, 0.5, - 0.2 );
+				controls.update();
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function selectVariant( scene, parser, extension, variantName ) {
+
+				const variantIndex = extension.variants.findIndex( ( v ) => v.name.includes( variantName ) );
+
+				scene.traverse( async ( object ) => {
+
+					if ( ! object.isMesh || ! object.userData.gltfExtensions ) return;
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：每个 mesh 自己记录这个变体应该使用哪个 material。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const meshVariantDef = object.userData.gltfExtensions[ 'KHR_materials_variants' ];
+
+					if ( ! meshVariantDef ) return;
+
+					if ( ! object.userData.originalMaterial ) {
+
+						object.userData.originalMaterial = object.material;
+
+					}
+
+					/* THREE_TOPIC_CORE_NOTE_START
+					 * 学习注释：parser.getDependency("material", id) 从 glTF 内部按索引取出材质对象，不需要你手写材质。
+					 * THREE_TOPIC_CORE_NOTE_END */
+					const mapping = meshVariantDef.mappings
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：切换变体时，只换材质，不重新加载几何体，所以很适合商品配置器。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						.find( ( mapping ) => mapping.variants.includes( variantIndex ) );
+
+					if ( mapping ) {
+
+						/* THREE_TOPIC_CORE_NOTE_START
+						 * 学习注释：案例还缓存原始材质，方便从变体切回默认外观。
+						 * THREE_TOPIC_CORE_NOTE_END */
+						object.material = await parser.getDependency( 'material', mapping.material );
+						parser.assignFinalMaterial( object );
+
+					} else {
+
+						object.material = object.userData.originalMaterial;
+
+					}
+
+					render();
+
+				} );
+
+			}
+			/* THREE_TOPIC_RESIZE_NOTE_START
+			 * 窗口变化时不能只改 canvas 尺寸；相机 aspect / 投影矩阵 / renderer 尺寸通常都要一起更新，否则画面比例或交互坐标会出问题。
+			 * THREE_TOPIC_RESIZE_NOTE_END */
+
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				render();
+
+			}
+
+			//
+			/* THREE_TOPIC_RENDER_NOTE_START
+			 * render() 是最终绘制阶段。普通案例多用 renderer.render(scene, camera)，后处理案例会改用 composer.render，多视口案例会设置 viewport/scissor。
+			 * THREE_TOPIC_RENDER_NOTE_END */
+
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
